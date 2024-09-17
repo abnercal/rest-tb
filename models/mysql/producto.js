@@ -11,8 +11,13 @@ const Producto = dbConnect.define('Producto', {
     field: "idproducto",
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
-    primaryKey: true,
     allowNull: false
+  },
+  codigoprod: {
+    field:'codigoprod',
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    allowNull: true
   },
   nombre: {
     field: "nombre",
@@ -60,50 +65,22 @@ const Producto = dbConnect.define('Producto', {
   tableName: 'producto', // Nombre de la tabla en la base de datos
   timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
 });
+//Definicion de relaciones
+Producto.belongsTo(Marca, {
+  foreignKey: 'idmarca'
+})
+Producto.belongsTo(Presentacion, {
+  foreignKey: 'idpresentacion'
+})
+Producto.belongsTo(Categoria, {
+  foreignKey: 'idcategoria'
+})
 
 Producto.findAllData  = function(){
-  Producto.belongsTo(Marca, {
-    foreignKey: 'idmarca',
-    as:'marca'
-  })
-  Producto.belongsTo(Presentacion, {
-    foreignKey: 'idpresentacion'
-  })
-  Producto.belongsTo(Categoria, {
-    foreignKey: 'idcategoria'
-  })
-  return Producto.findAll({include:[Marca,Presentacion,Categoria]})
-}
-
-Producto.findAllData  = function(){
-  Producto.belongsTo(Marca, {
-    foreignKey: 'idmarca'
-  })
-  Producto.belongsTo(Presentacion, {
-    foreignKey: 'idpresentacion'
-  })
-  Producto.belongsTo(Categoria, {
-    foreignKey: 'idcategoria'
-  })
   return Producto.findAll({include:[Marca,Presentacion,Categoria]})
 }
 
 Producto.findOneData  = function(_id){
-  Producto.belongsTo(Marca, {
-    foreignKey: 'idmarca'
-  })
-  Producto.belongsTo(Presentacion, {
-    foreignKey: 'idpresentacion'
-  })
-  Producto.belongsTo(Categoria, {
-    foreignKey: 'idcategoria'
-  })
   return Producto.findOne({where:{_id},include:[Marca,Presentacion,Categoria]})
 }
-// Definir asociaciones si es necesario
-// Por ejemplo, si quieres definir las asociaciones con otras tablas
-// Producto.belongsTo(Marca, { foreignKey: 'idmarca' });
-// Producto.belongsTo(Presentacion, { foreignKey: 'idpresentacion' });
-// Producto.belongsTo(Categoria, { foreignKey: 'idcategoria' });
-
 module.exports = Producto;

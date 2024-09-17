@@ -2,41 +2,53 @@
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
+const Producto = require("./producto");
+const Compra = require("./compra");
 
 const CompraDetalle = dbConnect.define('CompraDetalle', {
-  idcompra_detalle: {
+  _id: {
+    field:'idcompra_detalle',
     type: DataTypes.INTEGER,
     autoIncrement: true,
     primaryKey: true,
     allowNull: false
   },
   cantidad: {
+    field:'cantidad',
     type: DataTypes.INTEGER,
     allowNull: true,
     defaultValue: 0
   },
   costo: {
-    type: DataTypes.FLOAT,
+    field:'costo',
+    type: DataTypes.DECIMAL(18,4),
     allowNull: true,
     defaultValue: 0
   },
   idcompra: {
-    type: DataTypes.STRING(25),
+    field:'idcompra',
+    type: DataTypes.STRING(36),
     allowNull: false
   },
-  idproducto: {
-    type: DataTypes.STRING(25),
+  codigoprod: {
+    field:'codigoprod',
+    type: DataTypes.INTEGER,
     allowNull: false
   }
 }, {
-  tableName: 'compra_detalle', // Nombre de la tabla en la base de datos
-  timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
-  charset: 'utf8mb3' // Asegúrate de que el charset sea consistente con tu base de datos
+  tableName: 'compra_detalle',
+  timestamps: false,
 });
 
-// Definir asociaciones si es necesario
-// Por ejemplo, si quieres definir las asociaciones con las tablas compra y producto
-// CompraDetalle.belongsTo(Compra, { foreignKey: 'idcompra' });
-// CompraDetalle.belongsTo(Producto, { foreignKey: 'idproducto' });
+// Asociaciones
+CompraDetalle.belongsTo(Compra, { foreignKey: 'idcompra' });
+CompraDetalle.belongsTo(Producto, { foreignKey: 'codigoprod' });
 
+CompraDetalle.findAllData  = function(){
+  return CompraDetalle.findAll({include:[Compra,Producto]})
+}
+
+CompraDetalle.findOneData  = function(_id){
+  return CompraDetalle.findOne({where:{_id},include:[Compra,Producto]})
+}
 module.exports = CompraDetalle;

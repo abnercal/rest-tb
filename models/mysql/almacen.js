@@ -2,43 +2,57 @@
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
+const Producto = require("./producto");
+const Sucursal = require("./sucursal");
 
 const Almacen = dbConnect.define('Almacen', {
-  idalmacen: {
-    type: DataTypes.STRING(25),
+  _id: {
+    field:'idalmacen',
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
     allowNull: false
   },
   nombre: {
+    field:'nombre',
     type: DataTypes.STRING(45),
     allowNull: true
   },
   idsucursal: {
-    type: DataTypes.STRING(25),
+    field:'idsucursal',
+    type: DataTypes.INTEGER,
     allowNull: true
   },
-  idproducto: {
-    type: DataTypes.STRING(25),
+  codigoprod: {
+    field:'codigoprod',
+    type: DataTypes.INTEGER,
     allowNull: false
   },
   stock: {
+    field:'stock',
     type: DataTypes.FLOAT,
     allowNull: false,
     defaultValue: 0
   },
   fecha: {
-    type: DataTypes.DATEONLY, // Utiliza DATEONLY para la fecha sin hora
+    field:'fecha',
+    type: DataTypes.DATE, // Utiliza DATEONLY para la fecha sin hora
     allowNull: true
   }
 }, {
-  tableName: 'almacen', // Nombre de la tabla en la base de datos
-  timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
-  charset: 'utf8mb3' // Asegúrate de que el charset sea consistente con tu base de datos
+  tableName: 'almacen',
+  timestamps: false,
 });
 
-// Definir asociaciones si es necesario
-// Por ejemplo, si quieres definir las asociaciones con las tablas sucursales y producto
-// Almacen.belongsTo(Sucursal, { foreignKey: 'idsucursal' });
-// Almacen.belongsTo(Producto, { foreignKey: 'idproducto' });
+// Asociaciones
+Almacen.belongsTo(Sucursal, { foreignKey: 'idsucursal' });
+Almacen.belongsTo(Producto, { foreignKey: 'codigoprod' });
 
+Almacen.findAllData  = function(){
+  return Almacen.findAll({include:[Sucursal,Producto]})
+}
+
+Almacen.findOneData  = function(_id){
+  return Almacen.findOne({where:{_id},include:[Sucursal,Producto]})
+}
 module.exports = Almacen;

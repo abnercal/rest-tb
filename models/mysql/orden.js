@@ -2,37 +2,50 @@
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
+const Cliente = require("./cliente");
 
 const Orden = dbConnect.define('Orden', {
-  idorden: {
-    type: DataTypes.STRING(25),
+  _id: {
+    field:'idorden',
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
     allowNull: false
   },
   fecha: {
-    type: DataTypes.DATEONLY, // Utiliza DATEONLY para la fecha sin hora
+    field:'fecha',
+    type: DataTypes.DATE,
     allowNull: true
   },
   direccion: {
-    type: DataTypes.STRING(45),
-    allowNull: true
+    field:'direccion',
+    type: DataTypes.STRING(150),
+    allowNull: true,
   },
-  idclientes: {
-    type: DataTypes.STRING(25),
+  cliente: {
+    field:'cliente',
+    type: DataTypes.INTEGER,
     allowNull: true
   },
   estado: {
+    field:'estado',
     type: DataTypes.INTEGER,
     allowNull: true
   }
 }, {
-  tableName: 'orden', // Nombre de la tabla en la base de datos
-  timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
-  charset: 'utf8mb3' // Asegúrate de que el charset sea consistente con tu base de datos
+  tableName: 'orden',
+  timestamps: true,
 });
 
-// Definir asociaciones si es necesario
-// Por ejemplo, si quieres definir la asociación con la tabla clientes
-// Orden.belongsTo(Cliente, { foreignKey: 'idclientes' });
+// Asociaciones
+Orden.belongsTo(Cliente, { foreignKey: 'cliente' });
+
+Orden.findAllData  = function(){
+  return Orden.findAll({include:Cliente})
+}
+
+Orden.findOneData  = function(_id){
+  return Orden.findOne({where:{_id},include:Cliente})
+}
 
 module.exports = Orden;

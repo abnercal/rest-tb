@@ -16,6 +16,7 @@ const Marca = dbConnect.define('Marca', {
         estado: {
             field:'estado',
             type: DataTypes.BOOLEAN,
+            allowNull: true
         },
 
     },

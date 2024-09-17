@@ -16,6 +16,7 @@ const Presentacion = dbConnect.define('Presentacion', {
         estado: {
             field:'estado',
             type: DataTypes.BOOLEAN,
+            allowNull: true
         },
 
     },
