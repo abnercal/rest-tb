@@ -1,14 +1,33 @@
 const { response, request } = require('express')
 const { handleHttpError } = require('../utils/handleError');
 const Producto = require('../models/mysql/producto');
-
+const { Op } = require('sequelize');
 const getProductos = async (req= request, res= response) => {
     try {
-        const producto = await Producto.findAllData();
-        res.json({
-            msg: 'Lista de productos',
-            producto
-        })
+        const{ page = 1, search = ''} = req.query;
+        const pageNumber = parseInt(page);
+
+        const limite = 4;
+
+        const desde = limite * (pageNumber - 1);
+
+        const searchCondition = search
+            ? { nombre: { [Op.like]: `%${search}%` } }
+            : {};
+
+        const productos = await Producto.findAllData({
+            where: searchCondition,
+            limit: limite,
+            offset: desde,
+            order: [['idproducto', 'DESC']]
+        });
+
+        const totalProductos = await Producto.count({
+            where: searchCondition
+        });
+
+        res.json({msg: 'Lista de productos', data: productos, total: totalProductos, currentPage: pageNumber });
+
     } catch (error) {
         handleHttpError(res, error)
     }

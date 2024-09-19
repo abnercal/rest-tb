@@ -67,20 +67,23 @@ const Producto = dbConnect.define('Producto', {
 });
 //Definicion de relaciones
 Producto.belongsTo(Marca, {
-  foreignKey: 'idmarca'
+  foreignKey: 'idmarca',
+  as:'Marca'
 })
 Producto.belongsTo(Presentacion, {
-  foreignKey: 'idpresentacion'
+  foreignKey: 'idpresentacion',
+  as:'Presentacion'
 })
 Producto.belongsTo(Categoria, {
-  foreignKey: 'idcategoria'
+  foreignKey: 'idcategoria',
+  as:'Categoria'
 })
 
-Producto.findAllData  = function(){
-  return Producto.findAll({include:[Marca,Presentacion,Categoria]})
+Producto.findAllData  = function(options = {}){
+  return Producto.findAll({include:['Marca','Presentacion','Categoria'],...options})
 }
 
 Producto.findOneData  = function(_id){
-  return Producto.findOne({where:{_id},include:[Marca,Presentacion,Categoria]})
+  return Producto.findOne({where:{_id},include:['Marca','Presentacion','Categoria']})
 }
 module.exports = Producto;
