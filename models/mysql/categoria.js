@@ -18,6 +18,7 @@ const Categoria = dbConnect.define(
     estado: {
       field: "estado",
       type: DataTypes.BOOLEAN,
+      defaultValue: 1,
       allowNull: true
     },
   },

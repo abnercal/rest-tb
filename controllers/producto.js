@@ -7,7 +7,7 @@ const getProductos = async (req= request, res= response) => {
         const{ page = 1, search = ''} = req.query;
         const pageNumber = parseInt(page);
 
-        const limite = 4;
+        const limite = 10;
 
         const desde = limite * (pageNumber - 1);
 
@@ -39,8 +39,7 @@ const getProducto = async (req= request, res= response) => {
         if (producto) {
             res.json({
                 msg: 'Obtener Producto',
-                id,
-                producto
+                data: producto
             })
         } else {
             res.status(404).json({
@@ -57,7 +56,7 @@ const postProducto = async (req, res= response) => {
         const producto = await Producto.create(body);
         res.status(201).json({
             msg: 'Producto creada correctamente',
-            producto
+            data: producto
         })
         
     } catch (error) {
@@ -67,10 +66,8 @@ const postProducto = async (req, res= response) => {
 const putProducto = async (req, res= response) => {
     const {id} = req.params
     const { body} = req
-    console.log(id)
     try {
         const producto = await Producto.findByPk( id );
-        console.log(producto)
         if(!producto) {
             return res.status(404).json({
                 msg:`No existe el registro con el id ${ id }`
@@ -80,7 +77,8 @@ const putProducto = async (req, res= response) => {
         await producto.update( body );
         res.status(201).json({
             msg: 'Transaccion correcta',
-            body
+            //body,
+            data: producto
         })
         
     } catch (error) {

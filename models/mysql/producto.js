@@ -83,7 +83,7 @@ Producto.findAllData  = function(options = {}){
   return Producto.findAll({include:['Marca','Presentacion','Categoria'],...options})
 }
 
-Producto.findOneData  = function(_id){
-  return Producto.findOne({where:{_id},include:['Marca','Presentacion','Categoria']})
+Producto.findOneData  = function(codigoprod){
+  return Producto.findOne({where:{codigoprod},include:['Marca','Presentacion','Categoria']})
 }
 module.exports = Producto;
