@@ -1,12 +1,12 @@
 const { Router } = require('express')
-const { getCompras, getCompra, postCompra, putCompra, deleteCompra } = require('../controllers/compra')
+const { getComprasCtrl,getCompraCtrl,postCompraCtrl,putCompraCtrl,deleteCompraCtrl} = require('../controllers/compras/index')
 
 const router = Router()
 
-router.get('/', getCompras )
-router.get('/:id', getCompra )
-router.post('/', postCompra )
-router.put('/:id', putCompra )
-router.delete('/:id', deleteCompra )
+router.get('/', getComprasCtrl )
+router.get('/:id', getCompraCtrl )
+router.post('/', postCompraCtrl )
+router.put('/:id', putCompraCtrl )
+router.delete('/:id', deleteCompraCtrl )
 
 module.exports = router

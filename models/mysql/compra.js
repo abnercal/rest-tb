@@ -42,8 +42,8 @@ Compra.belongsTo(Proveedor, {
   foreignKey: 'idproveedor'
 })
 
-Compra.findAllData  = function(){
-  return Compra.findAll({include:Proveedor})
+Compra.findAllData  = function(options){
+  return Compra.findAll({...options,include:Proveedor})
 }
 
 Compra.findOneData  = function(_id){
