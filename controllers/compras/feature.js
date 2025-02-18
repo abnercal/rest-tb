@@ -4,46 +4,57 @@ const moment = require("moment");
 const models = require("../../models/mysql/index");
 
 async function getCompras(req) {
-  const { page = 1, search = "" } = req.query;
-  const pageNumber = parseInt(page);
+  try {
+    const { page = 1, search = "" } = req.query;
+    const pageNumber = parseInt(page);
 
-  const limite = 10;
-  const desde = limite * (pageNumber - 1);
+    const limite = 10;
+    const desde = limite * (pageNumber - 1);
 
-  let searchCondition = {};
+    let searchCondition = {};
 
-  if (search) {
-    // Verificar si el search es una fecha
-    const parsedDate = moment(search, "YYYY-MM-DD", true);
-    if (parsedDate.isValid()) {
-      const startOfDay = parsedDate.startOf("day").toDate();
-      const endOfDay = parsedDate.endOf("day").toDate();
+    if (search) {
+      // Verificar si el search es una fecha
+      const parsedDate = moment(search, "YYYY-MM-DD", true);
+      if (parsedDate.isValid()) {
+        const startOfDay = parsedDate.startOf("day").toDate();
+        const endOfDay = parsedDate.endOf("day").toDate();
 
-      searchCondition = {
-        [Op.or]: [
-          { direccion: { [Op.like]: `%${search}%` } },
-          { fecha: { [Op.between]: [startOfDay, endOfDay] } },
-          { "$Proveedor.nombre$": { [Op.like]: `%${search}%` } },
-        ],
-      };
-    } else {
-      searchCondition = {
-        [Op.or]: [
-          { direccion: { [Op.like]: `%${search}%` } },
-          { "$Proveedor.nombre$": { [Op.like]: `%${search}%` } },
-        ],
-      };
+        searchCondition = {
+          [Op.or]: [
+            { direccion: { [Op.like]: `%${search}%` } },
+            { fecha: { [Op.between]: [startOfDay, endOfDay] } },
+            { "$Proveedor.nombre$": { [Op.like]: `%${search}%` } },
+          ],
+        };
+      } else {
+        searchCondition = {
+          [Op.or]: [
+            { direccion: { [Op.like]: `%${search}%` } },
+            { "$Proveedor.nombre$": { [Op.like]: `%${search}%` } },
+          ],
+        };
+      }
     }
-  }
+    const totalCompras = await models.Compra.count({
+      where: searchCondition,
+    });
 
-  const compras = await models.Compra.findAllData({
-    where: searchCondition,
-    limit: limite,
-    offset: desde,
-    order: [["idcompra", "DESC"]],
-  });
+    const compras = await models.Compra.findAllData({
+      where: searchCondition,
+      limit: limite,
+      offset: desde,
+      order: [["idcompra", "DESC"]],
+    });
+    const totalPages = Math.ceil(totalCompras / limite);
 
-  return compras;
+    return {
+      compras,
+      total: totalCompras,
+      totalPages: totalPages,
+      currentPage: pageNumber,
+    };
+  } catch (error) {}
 }
 
 async function getCompra(req, transaction) {
