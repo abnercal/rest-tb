@@ -28,7 +28,7 @@ const postOrden = async (req, res= response) => {
             const almacen = await Almacen.findOne({
                 where: {
                     codigoprod: detalle.codigoprod,
-                    idsucursal: detalle.idsucursal // Asegúrate de que este campo existe en el detalle
+                    idsucursal: detalle.idsucursal 
                 }
             });
 

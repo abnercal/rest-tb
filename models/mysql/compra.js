@@ -32,6 +32,11 @@ const Compra = dbConnect.define('Compra', {
     field:'idproveedor',
     type: DataTypes.INTEGER,
     allowNull: true
+  },
+  total: {
+    field:'total_compra',
+    type: DataTypes.DECIMAL,
+    allowNull: true,
   }
 }, {
   tableName: 'compra',
