@@ -1,6 +1,60 @@
 // controllers/ventas/feature.js
 const models = require("../../models/mysql/index");
 
+async function getOrdenes(req) {
+  try {
+      const { page = 1, search = "" } = req.query;
+      const pageNumber = parseInt(page);
+  
+      const limite = 10;
+      const desde = limite * (pageNumber - 1);
+  
+      let searchCondition = {};
+  
+      if (search) {
+        // Verificar si el search es una fecha
+        const parsedDate = moment(search, "YYYY-MM-DD", true);
+        if (parsedDate.isValid()) {
+          const startOfDay = parsedDate.startOf("day").toDate();
+          const endOfDay = parsedDate.endOf("day").toDate();
+  
+          searchCondition = {
+            [Op.or]: [
+              { direccion: { [Op.like]: `%${search}%` } },
+              { fecha: { [Op.between]: [startOfDay, endOfDay] } },
+              { "$Cliente.nombre$": { [Op.like]: `%${search}%` } },
+            ],
+          };
+        } else {
+          searchCondition = {
+            [Op.or]: [
+              { direccion: { [Op.like]: `%${search}%` } },
+              { "$Cliente.nombre$": { [Op.like]: `%${search}%` } },
+            ],
+          };
+        }
+      }
+      const totalOrdenes = await models.Orden.count({
+        where: searchCondition,
+      });
+  
+      const ordenes = await models.Orden.findAllData({
+        where: searchCondition,
+        limit: limite,
+        offset: desde,
+        order: [["idorden", "DESC"]],
+      });
+      const totalPages = Math.ceil(totalOrdenes / limite);
+  
+      return {
+        ordenes,
+        total: totalOrdenes,
+        totalPages: totalPages,
+        currentPage: pageNumber,
+      };
+    } catch (error) {}
+}
+
 /**
  * Crear una nueva orden (venta)
  * @param {Object} cliente - Datos del cliente
@@ -80,10 +134,35 @@ const crearOrden = async (cliente, detalles, pago, transaction) => {
  */
 const obtenerOrden = async (id) => {
   try {
-    const orden = await models.Orden.findOneData(id);
+    // Obtener la orden con sus detalles, pago y cliente
+    const orden = await models.Orden.findOne({
+      where: { _id: id },
+      include: [
+        {
+          model: models.Cliente, // Incluir información del cliente
+          as: 'Cliente', // alias coincida con la asociación
+        },
+        {
+          model: models.OrdenDetalle, // Incluir detalles de la orden
+          as: 'Detalles',
+          include: [
+            {
+              model: models.Producto, // Incluir información del producto
+              as: 'Producto',
+            },
+          ],
+        },
+        {
+          model: models.Pago, // Incluir información del pago
+          as: 'Pago',
+        },
+      ],
+    });
+
     if (!orden) {
       throw new Error('La orden no existe');
     }
+
     return orden;
   } catch (error) {
     throw new Error(`Error al obtener la orden: ${error.message}`);
@@ -91,6 +170,7 @@ const obtenerOrden = async (id) => {
 };
 
 module.exports = {
+  getOrdenes,
   crearOrden,
   obtenerOrden,
 };

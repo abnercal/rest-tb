@@ -41,7 +41,7 @@ const OrdenDetalle = dbConnect.define('OrdenDetalle', {
 });
 
 // Asociaciones
-OrdenDetalle.belongsTo(Orden, { foreignKey: 'idorden' });
+//OrdenDetalle.belongsTo(Orden, { foreignKey: 'idorden' });
 OrdenDetalle.belongsTo(Producto, { foreignKey: 'codigoprod' });
 
 OrdenDetalle.findAllData  = function(){

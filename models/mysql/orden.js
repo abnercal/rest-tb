@@ -2,7 +2,9 @@
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
-const Cliente = require("./cliente");
+const Cliente = require('./cliente');
+const OrdenDetalle = require('./orden_detalle');
+const Pago = require('./pago');
 
 const Orden = dbConnect.define('Orden', {
   _id: {
@@ -43,14 +45,25 @@ const Orden = dbConnect.define('Orden', {
 });
 
 // Asociaciones
-Orden.belongsTo(Cliente, { foreignKey: 'cliente' });
+Orden.associate = () => {
+  Orden.belongsTo(Cliente, { foreignKey: 'cliente', as: 'Cliente' });
+  Orden.hasMany(OrdenDetalle, { foreignKey: 'idorden', as: 'Detalles' });
+  Orden.hasOne(Pago, { foreignKey: 'idorden', as: 'Pago' });
+};
 
-Orden.findAllData  = function(){
-  return Orden.findAll({include:Cliente})
-}
+Orden.findAllData = function (options = {}) {
+  return Orden.findAll({
+    include: [{ model: Cliente, as: 'Cliente' }], // Incluir el cliente
+    ...options, // Aplicar opciones adicionales (where, limit, offset, etc.)
+  });
+};
 
-Orden.findOneData  = function(_id){
-  return Orden.findOne({where:{_id},include:Cliente})
-}
+Orden.findOneData = function (_id, options = {}) {
+  return Orden.findOne({
+    where: { _id },
+    include: [{ model: Cliente, as: 'Cliente' }], // Incluir el cliente
+    ...options, // Aplicar opciones adicionales
+  });
+};
 
 module.exports = Orden;

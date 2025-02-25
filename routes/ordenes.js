@@ -1,11 +1,10 @@
 const { Router } = require('express')
-const { crearOrden,obtenerOrden} = require('../controllers/ventas/index')
-
+const  orden = require('../controllers/ventas/index')
 const router = Router()
 
-//router.get('/', obtenerOrden )
-router.get('/:id', obtenerOrden )
-router.post('/', crearOrden )
+router.get('/', orden.listarOrdenes )
+router.get('/:id', orden.obtenerOrden )
+router.post('/', orden.crearOrden )
 //router.put('/:id', putCompraCtrl )
 //router.delete('/:id', deleteCompraCtrl )
 

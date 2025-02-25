@@ -28,7 +28,6 @@ async function getComprasCtrl(req, res) {
 
 async function getCompraCtrl(req, res) {
   try {
-    console.log(req.params);
     const { id } = req.params;
     let compra = await detalleCompra(id);
     return res.status(200).json({ compra });
