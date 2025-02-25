@@ -108,46 +108,6 @@ async function detalleCompra(idcompra) {
   }
 }
 
-async function postCompr12a(req, transaction) {
-  const { body } = req;
-  const { detalles } = body;
-
-  const compra = await models.Compra.create(body, { transaction });
-
-  for (const detalle of detalles) {
-    await models.CompraDetalle.create(
-      {
-        ...detalle,
-        idcompra: compra._id,
-      },
-      { transaction }
-    );
-
-    const almacen = await models.Almacen.findOne({
-      where: {
-        codigoprod: detalle.codigoprod,
-        idsucursal: detalle.idsucursal,
-      },
-    });
-
-    if (almacen) {
-      almacen.stock += detalle.cantidad;
-      await almacen.save({ transaction });
-    } else {
-      await models.Almacen.create(
-        {
-          codigoprod: detalle.codigoprod,
-          idsucursal: detalle.idsucursal,
-          stock: detalle.cantidad,
-          fecha: new Date(),
-        },
-        { transaction }
-      );
-    }
-  }
-
-  return compra;
-}
 async function postCompra(req, transaction) {
   const { body } = req;
   const { detalles } = body;

@@ -4,33 +4,46 @@ const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
 
 const Cliente = dbConnect.define('Cliente', {
-  idclientes: {
-    type: DataTypes.STRING(25),
+  _id: {
+    field: "idclientes",
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    allowNull: false
+  },
+  idcliente: {
+    field: "codigo",
+    type: DataTypes.INTEGER,
     primaryKey: true,
     allowNull: false
   },
   nombres: {
+    field: "nombres",
     type: DataTypes.STRING(45),
     allowNull: false
   },
   apellidos: {
+    field: "apellidos",
     type: DataTypes.STRING(45),
     allowNull: false
   },
   email: {
+    field: "email",
     type: DataTypes.STRING(45),
     allowNull: true
   },
   telefono: {
+    field: "telefono",
     type: DataTypes.STRING(45),
     allowNull: true
   },
   estado: {
+    field: "estado",
     type: DataTypes.INTEGER,
     allowNull: true,
     defaultValue: 1
   },
   idtipoCli: {
+    field: "idtipoCli",
     type: DataTypes.INTEGER,
     allowNull: true
   }

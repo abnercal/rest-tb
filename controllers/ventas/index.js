@@ -1,6 +1,7 @@
 // controllers/ventas/index.js
 const feature = require('./feature');
-const { handleHttpError } = require('../../utils/errorHandler');
+const { handleHttpError } = require("../../utils/manejoError");
+const { dbConnect } = require("../../config/db/connection");
 
 /**
  * Crear una nueva orden (venta)
@@ -8,12 +9,18 @@ const { handleHttpError } = require('../../utils/errorHandler');
  * @param {Object} res - Objeto de respuesta HTTP
  */
 const crearOrden = async (req, res) => {
+  let transaction;
   try {
+    transaction = await dbConnect.transaction();
     const { cliente, detalles, pago } = req.body;
-    const nuevaOrden = await feature.crearOrden(cliente, detalles, pago);
-    res.status(201).json(nuevaOrden);
+    const nuevaOrden = await feature.crearOrden(cliente, detalles, pago, transaction);
+    await  transaction.commit();
+    return res.status(201).json({ msg: "Venta creada correctamente", nuevaOrden });
   } catch (error) {
-    handleHttpError(res, error);
+    if (transaction) {
+      await transaction.rollback(); // Rollback si hubo algún error
+    }
+    handleHttpError(res, error, "Error al crear la orden", 500);
   }
 };
 

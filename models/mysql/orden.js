@@ -31,6 +31,11 @@ const Orden = dbConnect.define('Orden', {
     field:'estado',
     type: DataTypes.INTEGER,
     allowNull: true
+  },
+  total: {
+    field:'total_orden',
+    type: DataTypes.DECIMAL,
+    allowNull: true,
   }
 }, {
   tableName: 'orden',
