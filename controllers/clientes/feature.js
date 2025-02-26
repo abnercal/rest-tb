@@ -25,7 +25,7 @@ const getClientes = async (query = {}) => {
       where: whereCondition,
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [["codigo", "ASC"]], // Ordenar por código de cliente
+      order: [["nit", "ASC"]], // Ordenar por código de cliente
     });
 
     const totalClientes = await models.Cliente.count({ where: whereCondition });
