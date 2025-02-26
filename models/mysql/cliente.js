@@ -10,9 +10,9 @@ const Cliente = dbConnect.define('Cliente', {
     defaultValue: DataTypes.UUIDV4,
     allowNull: false
   },
-  idcliente: {
-    field: "codigo",
-    type: DataTypes.INTEGER,
+  nit: {
+    field: "nit",
+    type: DataTypes.STRING(45),
     primaryKey: true,
     allowNull: false
   },

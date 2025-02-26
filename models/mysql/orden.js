@@ -26,7 +26,7 @@ const Orden = dbConnect.define('Orden', {
   },
   cliente: {
     field:'cliente',
-    type: DataTypes.INTEGER,
+    type: DataTypes.STRING(36),
     allowNull: true
   },
   estado: {

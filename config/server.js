@@ -17,6 +17,7 @@ class Server {
             proveedor: '/api/proveedor',
             compras: '/api/compras',
             ordenes: '/api/ordenes',
+            clientes: '/api/clientes',
         }
 
         //Conectar a base de datos
@@ -54,6 +55,7 @@ class Server {
         this.app.use(this.paths.proveedor, require('../routes/proveedores'))
         this.app.use(this.paths.compras, require('../routes/compras'))
         this.app.use(this.paths.ordenes, require('../routes/ordenes'))
+        this.app.use(this.paths.clientes, require('../routes/clientes'))
         this.app.use('*',(req,res) => {
             res.status(404).json({
                 errors: {
