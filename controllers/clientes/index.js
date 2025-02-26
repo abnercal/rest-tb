@@ -24,7 +24,7 @@ const getClienteById = async (req, res) => {
   try {
     const { id } = req.params;
     const cliente = await feature.getClienteById(id);
-    res.status(200).json(cliente);
+    res.status(200).json({msg:"Cliente id" , cliente });
   } catch (error) {
     handleHttpError(res, error, "Error al obtener el cliente", 500);
   }
