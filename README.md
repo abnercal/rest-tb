@@ -6,3 +6,6 @@
 node --watch app.js
 
 # Existe un archivo de env.example con los valores sugeridos al crear un env
+
+# usar este comando para correr datos iniciales 
+npm run seed

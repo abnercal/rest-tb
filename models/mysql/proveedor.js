@@ -5,8 +5,7 @@ const Proveedor = dbConnect.define(
   {
     _id: {
       field: "idproveedor",
-      type: DataTypes.INTEGER,
-      autoIncrement: true,
+      type: DataTypes.CHAR(12),
       primaryKey: true,
       allowNull: false,
     },
