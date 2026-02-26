@@ -74,6 +74,21 @@ async function runSeed() {
       idtipoCli: tipoClienteGenerico.idtipoCli
     }, { transaction });
 
+    // -------------------------------
+    // PRODUCTO GENÉRICO
+    // -------------------------------
+    await Producto.create({
+      codigoprod: 1,
+      nombre: "Producto Generico",
+      descripcion: "Producto generico",
+      imagen: null,
+      idmarca: marcaGenerica._id,
+      idpresentacion: presentacionGenerica._id,
+      idcategoria: categoriaGenerica._id,
+      estado: 1,
+      precio: 0
+    }, { transaction });
+
     await transaction.commit();
     console.log("✅ Seed ejecutado correctamente");
 
