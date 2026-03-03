@@ -39,7 +39,7 @@ const Usuario = dbConnect.define('Usuario',{
             field:'codigoemp',
             type: DataTypes.INTEGER,
             primaryKey: true,
-            allowNull: false
+            autoIncrement: true,
         },
     },
     {
