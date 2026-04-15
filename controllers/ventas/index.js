@@ -1,6 +1,6 @@
 // controllers/ventas/index.js
 const feature = require('./feature');
-const { handleHttpError } = require("../../utils/manejoError");
+const { errorResponse } = require("../../utils/handleError");
 const { dbConnect } = require("../../config/db/connection");
 
 const listarOrdenes = async (req, res) => {
@@ -14,7 +14,7 @@ const listarOrdenes = async (req, res) => {
       currentPage,
     })
   } catch (error) {
-    handleHttpError(res, error, "Error al listar las ordenes", 500);
+    errorResponse(res, error, "Error al listar las ordenes", 500);
   }
   
 }
@@ -36,7 +36,7 @@ const crearOrden = async (req, res) => {
     if (transaction) {
       await transaction.rollback(); // Rollback si hubo algún error
     }
-    handleHttpError(res, error, "Error al crear la orden", 500);
+    errorResponse(res, error, "Error al crear la orden", 500);
   }
 };
 
@@ -51,7 +51,7 @@ const obtenerOrden = async (req, res) => {
     const orden = await feature.obtenerOrden(id);
     res.status(200).json({ msg: 'Detalles de una orden', orden });
   } catch (error) {
-    handleHttpError(res, error, "Error al buscar la orden", 500);
+    errorResponse(res, error, "Error al buscar la orden", 500);
   }
 };
 

@@ -1,6 +1,6 @@
 const { response, request } = require("express");
 const { dbConnect } = require("../../config/db/connection");
-const { handleHttpError } = require("../../utils/handleError");
+const { successResponse,errorResponse } = require("../../utils/handleError");
 const {
   getCompras,
   getCompra,
@@ -21,7 +21,7 @@ async function getComprasCtrl(req, res) {
       currentPage,
     });
   } catch (error) {
-    return handleHttpError(res, error);
+    return errorResponse(res, error);
     //return res.status(error.codigo || 500).send({ message: `${error.message || error}` });
   }
 }
@@ -32,7 +32,7 @@ async function getCompraCtrl(req, res) {
     let compra = await detalleCompra(id);
     return res.status(200).json({ compra });
   } catch (error) {
-    return handleHttpError(res, error);
+    return errorResponse(res, error);
   }
 }
 
@@ -44,7 +44,7 @@ async function postCompraCtrl(req, res) {
     return res.status(201).json({ msg: "Compra creada correctamente", compra });
   } catch (error) {
     transaction.rollback();
-    return handleHttpError(res, error);
+    return errorResponse(res, error);
   }
 }
 
@@ -56,7 +56,7 @@ async function putCompraCtrl(req, res) {
     return res.status(200).json({ msg: "Transaccion correcta", compra });
   } catch (error) {
     transaction.rollback();
-    return handleHttpError(res, error);
+    return errorResponse(res, error);
   }
 }
 
@@ -70,7 +70,7 @@ async function deleteCompraCtrl(req, res) {
       .json({ msg: "Compra eliminada correctamente", compra });
   } catch (error) {
     transaction.rollback();
-    return handleHttpError(res, error);
+    return errorResponse(res, error);
   }
 }
 

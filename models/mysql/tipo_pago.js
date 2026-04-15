@@ -5,16 +5,19 @@ const { DataTypes } = require("sequelize");
 
 const TipoPago = dbConnect.define('TipoPago', {
   idtipopago: {
+    field:'idtipopago',
     type: DataTypes.INTEGER,
     autoIncrement: true,
     primaryKey: true,
     allowNull: false
   },
   nombre: {
+    field:'nombre',
     type: DataTypes.STRING(45),
     allowNull: false
   },
   estado: {
+    field:'estado',
     type: DataTypes.INTEGER,
     allowNull: true,
     defaultValue: 1
@@ -22,7 +25,6 @@ const TipoPago = dbConnect.define('TipoPago', {
 }, {
   tableName: 'tipo_pago', // Nombre de la tabla en la base de datos
   timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
-  charset: 'utf8mb3' // Asegúrate de que el charset sea consistente con tu base de datos
 });
 
 module.exports = TipoPago;

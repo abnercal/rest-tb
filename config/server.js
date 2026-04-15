@@ -13,6 +13,7 @@ class Server {
             categorias: '/api/categorias',
             marcas: '/api/marcas',
             presentaciones: '/api/presentaciones',
+            unidades: '/api/unidades',
             productos: '/api/productos',
             proveedor: '/api/proveedor',
             compras: '/api/compras',
@@ -52,6 +53,7 @@ class Server {
         this.app.use(this.paths.categorias, require('../routes/categorias'))
         this.app.use(this.paths.marcas, require('../routes/marcas'))
         this.app.use(this.paths.presentaciones, require('../routes/presentaciones'))
+        this.app.use(this.paths.unidades, require('../routes/unidades'))
         this.app.use(this.paths.productos, require('../routes/productos'))
         this.app.use(this.paths.proveedor, require('../routes/proveedores'))
         this.app.use(this.paths.compras, require('../routes/compras'))

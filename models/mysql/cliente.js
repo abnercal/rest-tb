@@ -6,15 +6,15 @@ const { DataTypes } = require("sequelize");
 const Cliente = dbConnect.define('Cliente', {
   _id: {
     field: "idclientes",
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true,
     allowNull: false
   },
   nit: {
     field: "nit",
-    type: DataTypes.STRING(45),
-    primaryKey: true,
-    allowNull: false
+    type: DataTypes.STRING(15),
+    allowNull: true
   },
   nombres: {
     field: "nombres",
@@ -24,37 +24,47 @@ const Cliente = dbConnect.define('Cliente', {
   apellidos: {
     field: "apellidos",
     type: DataTypes.STRING(45),
-    allowNull: false
+    allowNull: true
   },
   email: {
     field: "email",
-    type: DataTypes.STRING(45),
+    type: DataTypes.STRING(50),
     allowNull: true
   },
   telefono: {
     field: "telefono",
-    type: DataTypes.STRING(45),
+    type: DataTypes.STRING(15),
     allowNull: true
   },
   estado: {
     field: "estado",
     type: DataTypes.INTEGER,
-    allowNull: true,
+    allowNull: false,
     defaultValue: 1
   },
   idtipoCli: {
     field: "idtipoCli",
     type: DataTypes.INTEGER,
-    allowNull: true
+    allowNull: false
   }
 }, {
-  tableName: 'clientes', // Nombre de la tabla en la base de datos
-  timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
-  charset: 'utf8mb3' // Asegúrate de que el charset sea consistente con tu base de datos
+  tableName: 'clientes', 
+  timestamps: false, 
 });
 
-// Definir asociaciones si es necesario
-// Por ejemplo, si quieres definir la asociación con la tabla tipoCli
-// Cliente.belongsTo(TipoCli, { foreignKey: 'idtipoCli' });
+Cliente.associate = (models) => {
+  Cliente.belongsTo(models.TipoCliente, {
+    foreignKey: 'idtipoCli',
+    as:'tipoClie'
+  })
+}
+
+Cliente.findAllData  = function(options = {}){
+  return Cliente.findAll({include:['tipoClie'],...options})
+}
+
+Cliente.findOneData  = function(_id){
+  return Cliente.findOne({where:{_id},include:['tipoClie']})
+}
 
 module.exports = Cliente;

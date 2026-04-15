@@ -2,8 +2,6 @@
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
-const Producto = require("./producto");
-const Sucursal = require("./sucursal");
 
 const Almacen = dbConnect.define('Almacen', {
   _id: {
@@ -30,14 +28,20 @@ const Almacen = dbConnect.define('Almacen', {
   },
   stock: {
     field:'stock',
-    type: DataTypes.FLOAT,
+    type: DataTypes.DECIMAL(18,2),
     allowNull: false,
     defaultValue: 0
   },
   fecha: {
     field:'fecha',
-    type: DataTypes.DATE, // Utiliza DATEONLY para la fecha sin hora
+    type: DataTypes.DATE,
     allowNull: true
+  },
+  stock_minimo: {
+    field:'stock_minimo',
+    type: DataTypes.DECIMAL(18,2),
+    allowNull: false,
+    defaultValue: 0
   }
 }, {
   tableName: 'almacen',
@@ -45,8 +49,16 @@ const Almacen = dbConnect.define('Almacen', {
 });
 
 // Asociaciones
-Almacen.belongsTo(Sucursal, { foreignKey: 'idsucursal' });
-Almacen.belongsTo(Producto, { foreignKey: 'codigoprod' });
+Almacen.associate = (models) => {
+  Almacen.belongsTo(models.Sucursal, { 
+    foreignKey: 'idsucursal',
+    as: 'Sucursal'
+  });
+  Almacen.belongsTo(models.Producto, { 
+    foreignKey: 'codigoprod',
+    as: 'Producto'
+  });
+}
 
 Almacen.findAllData  = function(){
   return Almacen.findAll({include:[Sucursal,Producto]})

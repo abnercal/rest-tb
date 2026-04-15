@@ -2,7 +2,6 @@
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
-const Proveedor = require("./proveedor");
 
 const Compra = dbConnect.define('Compra', {
   _id: {
@@ -10,6 +9,11 @@ const Compra = dbConnect.define('Compra', {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
+    allowNull: false
+  },
+  nombre: {
+    field: "nombre",
+    type: DataTypes.STRING(100),
     allowNull: false
   },
   fecha: {
@@ -30,29 +34,48 @@ const Compra = dbConnect.define('Compra', {
   },
   idproveedor: {
     field:'idproveedor',
-    type: DataTypes.CHAR(12),
+    type: DataTypes.INTEGER,
     allowNull: true
   },
   total: {
     field:'total_compra',
     type: DataTypes.DECIMAL,
     allowNull: true,
+  },
+  idusuario: {
+    field:'idusuario',
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  idsucursal: {
+    field:'idsucursal',
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'compra',
   timestamps: true,
 });
-
-Compra.belongsTo(Proveedor, {
-  foreignKey: 'idproveedor'
-})
-
+Compra.associate = (models) => {
+  Compra.belongsTo(models.Proveedor, {
+    foreignKey: 'idproveedor',
+    as:'Proveedor'
+  })
+  Compra.belongsTo(models.Sucursal, {
+    foreignKey: 'idsucursal',
+    as:'Sucursal'
+  })
+  Compra.belongsTo(models.Usuario, {
+    foreignKey: 'idusuario',
+    as: 'Usuario'
+  })
+}
 Compra.findAllData  = function(options){
-  return Compra.findAll({...options,include:Proveedor})
+  return Compra.findAll({...options,include:['Proveedor','Sucursal','Usuario']})
 }
 
 Compra.findOneData  = function(_id){
-  return Compra.findOne({where:{_id},include:Proveedor})
+  return Compra.findOne({where:{_id},include:['Proveedor','Sucursal','Usuario']})
 }
 
 module.exports = Compra;

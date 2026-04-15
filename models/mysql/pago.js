@@ -19,13 +19,13 @@ const Pago = dbConnect.define('Pago', {
   },
   importe: {
     field: "importe",
-    type: DataTypes.FLOAT,
+    type: DataTypes.DECIMAL(18,2),
     allowNull: true,
     defaultValue: 0
   },
   idorden: {
     field: "idorden",
-    type: DataTypes.STRING(25),
+    type: DataTypes.STRING(36),
     allowNull: true
   },
   idtipopago: {
@@ -35,18 +35,13 @@ const Pago = dbConnect.define('Pago', {
   },
   fecha_pago: {
     field: "fecha_pago",
-    type: DataTypes.DATEONLY, // Utiliza DATEONLY para la fecha sin hora
+    type: DataTypes.DATE, 
     allowNull: true
   }
 }, {
   tableName: 'pagos', // Nombre de la tabla en la base de datos
   timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
-  charset: 'utf8mb3' // Asegúrate de que el charset sea consistente con tu base de datos
 });
 
-// Definir asociaciones si es necesario
-// Por ejemplo, si quieres definir las asociaciones con las tablas orden y tipo_pago
-// Pago.belongsTo(Orden, { foreignKey: 'idorden' });
-// Pago.belongsTo(TipoPago, { foreignKey: 'idtipopago' });
 
 module.exports = Pago;

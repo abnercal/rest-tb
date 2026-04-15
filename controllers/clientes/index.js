@@ -1,17 +1,17 @@
 const feature = require('./feature');
-const { handleHttpError } = require("../../utils/manejoError");
+const { successResponse, errorResponse } = require("../../utils/handleError");
 
 /**
  * Obtener todos los clientes
  * @param {Object} req - Objeto de solicitud HTTP
  * @param {Object} res - Objeto de respuesta HTTP
  */
-const getClientes = async (req, res) => {
+const getClientesCtrl = async (req, res) => {
   try {
-    const clientes = await feature.getClientes(req.query);
-    res.status(200).json(clientes);
+    const result = await feature.getClientesFtr(req.query);
+    return successResponse(res, "Lista de clientes", result.data, result.meta);
   } catch (error) {
-    handleHttpError(res, error, "Error al obtener los clientes", 500);
+    return errorResponse(res, error, "Error al obtener clientes");
   }
 };
 
@@ -20,13 +20,12 @@ const getClientes = async (req, res) => {
  * @param {Object} req - Objeto de solicitud HTTP
  * @param {Object} res - Objeto de respuesta HTTP
  */
-const getClienteById = async (req, res) => {
+const getClienteCtrl = async (req, res) => {
   try {
-    const { id } = req.params;
-    const cliente = await feature.getClienteById(id);
-    res.status(200).json({msg:"Cliente id" , cliente });
+    const result = await feature.getClienteFtr(req.params.id);
+    return successResponse(res, "Cliente encontrado", result);
   } catch (error) {
-    handleHttpError(res, error, "Error al obtener el cliente", 500);
+    return errorResponse(res, error, "Error al obtener cliente");
   }
 };
 
@@ -35,12 +34,12 @@ const getClienteById = async (req, res) => {
  * @param {Object} req - Objeto de solicitud HTTP
  * @param {Object} res - Objeto de respuesta HTTP
  */
-const crearCliente = async (req, res) => {
+const createClienteCtrl = async (req, res) => {
   try {
-    const nuevoCliente = await feature.createCliente(req.body);
-    res.status(201).json(nuevoCliente);
+    const data = await feature.createClienteFtr(req.body);
+    return successResponse(res, "Cliente creado", data, null, 201);
   } catch (error) {
-    handleHttpError(res, error, "Error al crear el cliente", 500);
+    return errorResponse(res, error, "Error al crear cliente");
   }
 };
 
@@ -49,13 +48,12 @@ const crearCliente = async (req, res) => {
  * @param {Object} req - Objeto de solicitud HTTP
  * @param {Object} res - Objeto de respuesta HTTP
  */
-const updateCliente = async (req, res) => {
+const updateClienteCtrl = async (req, res) => {
   try {
-    const { id } = req.params;
-    const clienteActualizado = await feature.updateCliente(id, req.body);
-    res.status(200).json(clienteActualizado);
+    const data = await feature.updateClienteFtr(req.params.id, req.body);
+    return successResponse(res, "Cliente actualizado", data);
   } catch (error) {
-    handleHttpError(res, error, "Error al actualizar el cliente", 500);
+    return errorResponse(res, error, "Error al actualizar cliente");
   }
 };
 
@@ -64,20 +62,19 @@ const updateCliente = async (req, res) => {
  * @param {Object} req - Objeto de solicitud HTTP
  * @param {Object} res - Objeto de respuesta HTTP
  */
-const deleteCliente = async (req, res) => {
+const deleteClienteCtrl = async (req, res) => {
   try {
-    const { id } = req.params;
-    await feature.deleteCliente(id);
-    res.status(204).send(); // No Content
+    await feature.deleteClienteFtr(req.params.id);
+    return successResponse(res, "Cliente eliminado");
   } catch (error) {
-    handleHttpError(res, error, "Error al eliminar el cliente", 500);
+    return errorResponse(res, error, "Error al eliminar cliente");
   }
 };
 
 module.exports = {
-  getClientes,
-  getClienteById,
-  crearCliente,
-  updateCliente,
-  deleteCliente,
+  getClientesCtrl,
+  getClienteCtrl,
+  createClienteCtrl,
+  updateClienteCtrl,
+  deleteClienteCtrl,
 };

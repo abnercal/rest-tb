@@ -2,8 +2,6 @@
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
-const Producto = require("./producto");
-const Compra = require("./compra");
 
 const CompraDetalle = dbConnect.define('CompraDetalle', {
   _id: {
@@ -21,7 +19,7 @@ const CompraDetalle = dbConnect.define('CompraDetalle', {
   },
   costo: {
     field:'costo',
-    type: DataTypes.DECIMAL(18,4),
+    type: DataTypes.DECIMAL(18,2),
     allowNull: true,
     defaultValue: 0
   },
@@ -41,14 +39,21 @@ const CompraDetalle = dbConnect.define('CompraDetalle', {
 });
 
 // Asociaciones
-CompraDetalle.belongsTo(Compra, { foreignKey: 'idcompra' });
-CompraDetalle.belongsTo(Producto, { foreignKey: 'codigoprod' });
-
+CompraDetalle.associate = (models) => {
+  CompraDetalle.belongsTo(models.Compra, { 
+    foreignKey: 'idcompra',
+    as: 'Compras'
+  });
+  CompraDetalle.belongsTo(models.Producto, { 
+    foreignKey: 'codigoprod',
+    as: 'Producto'
+  });
+}
 CompraDetalle.findAllData  = function(){
-  return CompraDetalle.findAll({include:[Compra,Producto]})
+  return CompraDetalle.findAll({include:[Compras,Producto]})
 }
 
 CompraDetalle.findOneData  = function(_id){
-  return CompraDetalle.findOne({where:{_id},include:[Compra,Producto]})
+  return CompraDetalle.findOne({where:{_id},include:[Compras,Producto]})
 }
 module.exports = CompraDetalle;

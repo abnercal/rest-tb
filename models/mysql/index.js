@@ -20,6 +20,11 @@ Object.keys(db).forEach(modelName => {
   }
 });
 
+// Asociaciones externas (muchos a muchos)
+const applyAssociations = require('./associations');
+applyAssociations(db);
+
+
 db.sequelize = dbConnect;
 db.Sequelize = require('sequelize');
 

@@ -2,7 +2,12 @@ const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
 
 const Usuario = dbConnect.define('Usuario',{
-        _id : {field:'idusuarios', type: DataTypes.UUID, unique: 'uk_usuario_id', defaultValue: DataTypes.UUIDV4},
+        _id : {
+            field:'idusuarios', 
+            type: DataTypes.INTEGER,
+            primaryKey: true,
+            allowNull: false
+        },
         nombre: {
             field:'nombre',
             type: DataTypes.STRING,
@@ -37,9 +42,13 @@ const Usuario = dbConnect.define('Usuario',{
         },
         codigoemp: {
             field:'codigoemp',
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        idsucursal: {
+            field: "idsucursal",
             type: DataTypes.INTEGER,
-            primaryKey: true,
-            autoIncrement: true,
+            allowNull: true
         },
     },
     {
@@ -47,5 +56,12 @@ const Usuario = dbConnect.define('Usuario',{
         timestamps: true,
     }
 );
+
+Usuario.associate = (models) => {
+  Usuario.belongsTo(models.Sucursal, {
+    foreignKey: 'idsucursal',
+    as: 'Sucursal'
+  });
+};
 
 module.exports = Usuario;

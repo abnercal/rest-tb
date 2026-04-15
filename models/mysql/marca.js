@@ -6,7 +6,8 @@ const Marca = dbConnect.define('Marca', {
             field:'idmarca',
             type: DataTypes.INTEGER,
             primaryKey: true,
-            allowNull: true
+            autoIncrement: true,
+            allowNull: false,
         },
         nombre: {
             field:'nombre',
@@ -16,7 +17,8 @@ const Marca = dbConnect.define('Marca', {
         estado: {
             field:'estado',
             type: DataTypes.BOOLEAN,
-            allowNull: true
+            allowNull: false,
+            defaultValue: 1
         },
 
     },

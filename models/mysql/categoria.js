@@ -8,7 +8,8 @@ const Categoria = dbConnect.define(
       field: "idcategoria",
       type: DataTypes.INTEGER,
       primaryKey: true,
-      allowNull: true,
+      autoIncrement: true,
+      allowNull: false,
     },
     nombre: {
       field: "nombre",
@@ -19,7 +20,7 @@ const Categoria = dbConnect.define(
       field: "estado",
       type: DataTypes.BOOLEAN,
       defaultValue: 1,
-      allowNull: true
+      allowNull: false
     },
   },
   {

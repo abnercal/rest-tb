@@ -5,36 +5,47 @@ const { DataTypes } = require("sequelize");
 
 const Precio = dbConnect.define('Precio', {
   idprecios: {
+    field:'idprecios',
     type: DataTypes.INTEGER,
     autoIncrement: true,
     primaryKey: true,
     allowNull: false
   },
   precio: {
-    type: DataTypes.DECIMAL(18, 4),
+    field:'precio',
+    type: DataTypes.DECIMAL(18, 2),
     allowNull: true,
     defaultValue: 0
   },
   fechaefecto: {
-    type: DataTypes.DATEONLY, // Utiliza DATEONLY para la fecha sin hora
+    field:'fechaefecto',
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  fechafin: {
+    field:'fechafin',
+    type: DataTypes.DATE,
     allowNull: true
   },
   tipoprecio: {
+    field:'tipoprecio',
     type: DataTypes.STRING(45),
     allowNull: true
   },
-  idproducto: {
-    type: DataTypes.STRING(25),
+  codigoprod: {
+    field:'codigoprod',
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  idtipoCli: {
+    field:'idtipoCli',
+    type: DataTypes.INTEGER,
     allowNull: true
   }
 }, {
   tableName: 'precios', // Nombre de la tabla en la base de datos
   timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
-  charset: 'utf8mb3' // Asegúrate de que el charset sea consistente con tu base de datos
 });
 
-// Definir asociaciones si es necesario
-// Por ejemplo, si quieres definir la asociación con la tabla producto
-// Precio.belongsTo(Producto, { foreignKey: 'idproducto' });
 
 module.exports = Precio;

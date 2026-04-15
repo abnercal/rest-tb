@@ -5,9 +5,11 @@ const Proveedor = dbConnect.define(
   {
     _id: {
       field: "idproveedor",
-      type: DataTypes.CHAR(12),
+      type: DataTypes.INTEGER,
       primaryKey: true,
+      autoIncrement: true,
       allowNull: false,
+      
     },
     nombre: {
       field: "nombre",
@@ -21,20 +23,25 @@ const Proveedor = dbConnect.define(
     },
     telefono: {
       field: "telefono",
-      type: DataTypes.STRING(45),
+      type: DataTypes.STRING(15),
       allowNull: true,
     },
     email: {
       field: "email",
-      type: DataTypes.STRING(45),
+      type: DataTypes.STRING(50),
       allowNull: true,
     },
     estado: {
       field: "estado",
       type: DataTypes.INTEGER,
-      allowNull: true,
+      allowNull: false,
       defaultValue: 1,
     },
+    nit: {
+      field: "nit",
+      type: DataTypes.STRING(15),
+      allowNull: true
+    }
   },
   {
     tableName: "proveedores",

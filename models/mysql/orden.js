@@ -14,6 +14,11 @@ const Orden = dbConnect.define('Orden', {
     primaryKey: true,
     allowNull: false
   },
+  nombre: {
+    field: "nombre",
+    type: DataTypes.STRING(100),
+    allowNull: false
+  },
   fecha: {
     field:'fecha',
     type: DataTypes.DATE,
@@ -24,20 +29,30 @@ const Orden = dbConnect.define('Orden', {
     type: DataTypes.STRING(150),
     allowNull: true,
   },
-  cliente: {
-    field:'cliente',
-    type: DataTypes.STRING(36),
+  idcliente: {
+    field:'idclientes',
+    type: DataTypes.INTEGER,
     allowNull: true
   },
-  estado: {
-    field:'estado',
+  idestado: {
+    field:'idestado',
     type: DataTypes.INTEGER,
     allowNull: true
   },
   total: {
     field:'total_orden',
-    type: DataTypes.DECIMAL,
+    type: DataTypes.DECIMAL(18,2),
     allowNull: true,
+  },
+  idusuario: {
+    field:'idusuario',
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  idsucursal: {
+    field:'idsucursal',
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'orden',

@@ -1,118 +1,101 @@
-const models = require("../../models/mysql/index");
+const { Op } = require("sequelize");
+const models = require("../../models/mysql");
 
-/**
- * Obtener todos los clientes
- * @param {Object} query - Parámetros de consulta (paginación, filtros, etc.)
- * @returns {Array} - Lista de clientes
- */
-const getClientes = async (query = {}) => {
-  try {
-    const { page = 1, limit = 10, search = "" } = query;
-    const offset = (page - 1) * limit;
+const getClientesFtr = async (query) => {
+  const { page = 1, limit = 20, search = "" } = query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    let whereCondition = {};
-    if (search) {
-      whereCondition = {
-        [models.Sequelize.Op.or]: [
-          { nombres: { [models.Sequelize.Op.like]: `%${search}%` } },
-          { apellidos: { [models.Sequelize.Op.like]: `%${search}%` } },
-          { email: { [models.Sequelize.Op.like]: `%${search}%` } },
-        ],
-      };
-    }
-
-    const clientes = await models.Cliente.findAll({
-      where: whereCondition,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [["nit", "ASC"]], // Ordenar por código de cliente
-    });
-
-    const totalClientes = await models.Cliente.count({ where: whereCondition });
-
-    return {
-      clientes,
-      total: totalClientes,
-      totalPages: Math.ceil(totalClientes / limit),
-      currentPage: parseInt(page),
-    };
-  } catch (error) {
-    throw new Error(`Error al obtener los clientes: ${error.message}`);
+  let where = { estado: 1 };
+  if (search) {
+    where[Op.or] = [
+      { nombres: { [Op.like]: `%${search}%` } },
+      { apellidos: { [Op.like]: `%${search}%` } },
+      { nit: { [Op.like]: `%${search}%` } },
+      { email: { [Op.like]: `%${search}%` } },
+    ];
   }
+
+  const { count, rows } = await models.Cliente.findAndCountAll({
+    where,
+    limit: parseInt(limit),
+    offset,
+    order: [["nombres", "ASC"]],
+    include: [ 
+      { 
+        model: models.TipoCliente,
+        as: "tipoClie"
+      }
+    ]
+  });
+
+  return {
+    data: rows,
+    meta: {
+      total: count,
+      totalPages: Math.ceil(count / parseInt(limit)),
+      currentPage: parseInt(page),
+      limit: parseInt(limit),
+    },
+  };
 };
 
-/**
- * Obtener un cliente por su ID
- * @param {String} id - ID del cliente
- * @returns {Object} - Cliente encontrado
- */
-const getClienteById = async (id) => {
+const getClienteFtr = async (id) => {
+  const cliente = await models.Cliente.findByPk(id);
+  if (!cliente) {
+    const error = new Error("Cliente no encontrado");
+    error.status = 404;
+    throw error;
+  }
+  return cliente;
+};
+
+const createClienteFtr = async (body) => {
+  const transaction = await models.sequelize.transaction();
   try {
-    const cliente = await models.Cliente.findOne({
-      where: { nit: id }, // Buscar por el campo "codigo"
+    // Validar NIT duplicado
+    const existeNit = await models.Cliente.findOne({
+      where: { nit: body.nit },
+      transaction,
     });
-    if (!cliente) {
-      throw new Error('Cliente no encontrado');
+    if (existeNit) {
+      const error = new Error("El NIT ya está registrado");
+      error.status = 409;
+      throw error;
     }
+
+    const cliente = await models.Cliente.create(body, { transaction });
+    await transaction.commit();
     return cliente;
   } catch (error) {
-    throw new Error(`Error al obtener el cliente: ${error.message}`);
+    await transaction.rollback();
+    throw error;
   }
 };
 
-/**
- * Crear un nuevo cliente
- * @param {Object} data - Datos del cliente
- * @returns {Object} - Cliente creado
- */
-const createCliente = async (data) => {
+const updateClienteFtr = async (id, body) => {
+  const transaction = await models.sequelize.transaction();
   try {
-    const nuevoCliente = await models.Cliente.create(data);
-    return nuevoCliente;
+    const cliente = await getClienteFtr(id);
+    await cliente.update(body, { transaction });
+    await transaction.commit();
+    return cliente;
   } catch (error) {
-    throw new Error(`Error al crear el cliente: ${error.message}`);
+    await transaction.rollback();
+    throw error;
   }
 };
 
-/**
- * Actualizar un cliente existente
- * @param {String} id - ID del cliente
- * @param {Object} data - Datos actualizados del cliente
- * @returns {Object} - Cliente actualizado
- */
-const updateCliente = async (id, data) => {
-  try {
-    const cliente = await models.Cliente.findByPk(id);
-    if (!cliente) {
-      throw new Error('Cliente no encontrado');
-    }
-    const clienteActualizado = await cliente.update(data);
-    return clienteActualizado;
-  } catch (error) {
-    throw new Error(`Error al actualizar el cliente: ${error.message}`);
-  }
-};
-
-/**
- * Eliminar un cliente
- * @param {String} id - ID del cliente
- */
-const deleteCliente = async (id) => {
-  try {
-    const cliente = await models.Cliente.findByPk(id);
-    if (!cliente) {
-      throw new Error('Cliente no encontrado');
-    }
-    await cliente.destroy();
-  } catch (error) {
-    throw new Error(`Error al eliminar el cliente: ${error.message}`);
-  }
+// Soft delete: estado = 0
+const deleteClienteFtr = async (id) => {
+  const cliente = await getClienteFtr(id);
+  await cliente.update({ estado: 0 });
+  return true;
 };
 
 module.exports = {
-  getClientes,
-  getClienteById,
-  createCliente,
-  updateCliente,
-  deleteCliente,
+  getClientesFtr,
+  getClienteFtr,
+  createClienteFtr,
+  updateClienteFtr,
+  deleteClienteFtr,
 };

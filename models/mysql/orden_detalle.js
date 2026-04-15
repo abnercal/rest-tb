@@ -21,7 +21,7 @@ const OrdenDetalle = dbConnect.define('OrdenDetalle', {
   },
   precio: {
     field:'precio',
-    type: DataTypes.FLOAT,
+    type: DataTypes.DECIMAL(18,2),
     allowNull: true,
     defaultValue: 0
   },
