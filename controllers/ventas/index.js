@@ -1,62 +1,55 @@
-// controllers/ventas/index.js
-const feature = require('./feature');
-const { errorResponse } = require("../../utils/handleError");
-const { dbConnect } = require("../../config/db/connection");
+const feature = require("./feature");
+const { successResponse, errorResponse } = require("../../utils/handleError");
 
-const listarOrdenes = async (req, res) => {
+const getVentasCtrl = async (req, res) => {
   try {
-    const { ordenes, total, totalPages, currentPage } = await feature.getOrdenes(req);
-    return res.status(200).json({
-      msg: "Lista de ordenes",
-      ordenes,
-      total,
-      totalPages,
-      currentPage,
-    })
+    const result = await feature.getVentasFtr(req.query);
+    return successResponse(res, "Lista de ventas", result.data, result.meta);
   } catch (error) {
-    errorResponse(res, error, "Error al listar las ordenes", 500);
-  }
-  
-}
-
-/**
- * Crear una nueva orden (venta)
- * @param {Object} req - Objeto de solicitud HTTP
- * @param {Object} res - Objeto de respuesta HTTP
- */
-const crearOrden = async (req, res) => {
-  let transaction;
-  try {
-    transaction = await dbConnect.transaction();
-    const { cliente, detalles, pago } = req.body;
-    const nuevaOrden = await feature.crearOrden(cliente, detalles, pago, transaction);
-    await  transaction.commit();
-    return res.status(201).json({ msg: "Venta creada correctamente", nuevaOrden });
-  } catch (error) {
-    if (transaction) {
-      await transaction.rollback(); // Rollback si hubo algún error
-    }
-    errorResponse(res, error, "Error al crear la orden", 500);
+    return errorResponse(res, error, "Error al obtener ventas");
   }
 };
 
-/**
- * Obtener una orden por su ID
- * @param {Object} req - Objeto de solicitud HTTP
- * @param {Object} res - Objeto de respuesta HTTP
- */
-const obtenerOrden = async (req, res) => {
+const getVentaCtrl = async (req, res) => {
   try {
-    const { id } = req.params;
-    const orden = await feature.obtenerOrden(id);
-    res.status(200).json({ msg: 'Detalles de una orden', orden });
+    const result = await feature.getVentaFtr(req.params.id);
+    return successResponse(res, "Venta encontrada", result);
   } catch (error) {
-    errorResponse(res, error, "Error al buscar la orden", 500);
+    return errorResponse(res, error, "Error al obtener venta");
+  }
+};
+
+const createVentaCtrl = async (req, res) => {
+  try {
+    const data = await feature.createVentaFtr(req.body);
+    return successResponse(res, "Venta registrada", data, null, 201);
+  } catch (error) {
+    return errorResponse(res, error, "Error al registrar venta");
+  }
+};
+
+const updateVentaCtrl = async (req, res) => {
+  try {
+    const data = await feature.updateVentaFtr(req.params.id, req.body);
+    return successResponse(res, "Venta actualizada", data);
+  } catch (error) {
+    return errorResponse(res, error, "Error al actualizar venta");
+  }
+};
+
+const deleteVentaCtrl = async (req, res) => {
+  try {
+    await feature.deleteVentaFtr(req.params.id);
+    return successResponse(res, "Venta eliminada");
+  } catch (error) {
+    return errorResponse(res, error, "Error al eliminar venta");
   }
 };
 
 module.exports = {
-  listarOrdenes,
-  crearOrden,
-  obtenerOrden,
+  getVentasCtrl,
+  getVentaCtrl,
+  createVentaCtrl,
+  updateVentaCtrl,
+  deleteVentaCtrl,
 };

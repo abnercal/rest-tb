@@ -69,6 +69,10 @@ Compra.associate = (models) => {
     foreignKey: 'idusuario',
     as: 'Usuario'
   })
+  Compra.hasMany(models.CompraDetalle, {
+    foreignKey: 'idcompra',
+    as: 'Detalles'
+  });
 }
 Compra.findAllData  = function(options){
   return Compra.findAll({...options,include:['Proveedor','Sucursal','Usuario']})

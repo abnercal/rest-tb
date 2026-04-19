@@ -8,7 +8,8 @@ const Sucursal = dbConnect.define('Sucursal', {
     field:'idsucursal',
     type: DataTypes.INTEGER,
     primaryKey: true,
-    allowNull: false
+    autoIncrement: true,
+    allowNull: false,
   },
   nombre: {
     field:'nombre',
@@ -28,14 +29,14 @@ const Sucursal = dbConnect.define('Sucursal', {
   estado: {
     field:'estado',
     type: DataTypes.INTEGER,
-    allowNull: true,
+    allowNull: false,
     defaultValue: 1
   },
   es_principal: {
     field:'es_principal',
     type: DataTypes.INTEGER,
     allowNull: true,
-    defaultValue: 1
+    defaultValue: 0
   }
 }, {
   tableName: 'sucursales', // Nombre de la tabla en la base de datos

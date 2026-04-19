@@ -1,195 +1,291 @@
-const { response, request } = require("express");
 const { Op } = require("sequelize");
 const moment = require("moment");
-const models = require("../../models/mysql/index");
+const models = require("../../models/mysql");
 
-async function getCompras(req) {
-  try {
-    const { page = 1, search = "" } = req.query;
-    const pageNumber = parseInt(page);
+/**
+ * Listar compras con paginación y búsqueda por fecha o proveedor
+ */
+const getComprasFtr = async (query) => {
+  const { page = 1, limit = 10, search = "" } = query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const limite = 10;
-    const desde = limite * (pageNumber - 1);
+  let where = { estado: true };
 
-    let searchCondition = {};
-
-    if (search) {
-      // Verificar si el search es una fecha
-      const parsedDate = moment(search, "YYYY-MM-DD", true);
-      if (parsedDate.isValid()) {
-        const startOfDay = parsedDate.startOf("day").toDate();
-        const endOfDay = parsedDate.endOf("day").toDate();
-
-        searchCondition = {
-          [Op.or]: [
-            { direccion: { [Op.like]: `%${search}%` } },
-            { fecha: { [Op.between]: [startOfDay, endOfDay] } },
-            { "$Proveedor.nombre$": { [Op.like]: `%${search}%` } },
-          ],
-        };
-      } else {
-        searchCondition = {
-          [Op.or]: [
-            { direccion: { [Op.like]: `%${search}%` } },
-            { "$Proveedor.nombre$": { [Op.like]: `%${search}%` } },
-          ],
-        };
-      }
+  if (search) {
+    const parsedDate = moment(search, "YYYY-MM-DD", true);
+    if (parsedDate.isValid()) {
+      where[Op.or] = [
+        { fecha: { [Op.between]: [parsedDate.startOf("day").toDate(), parsedDate.endOf("day").toDate()] } },
+        { "$Proveedor.nombre$": { [Op.like]: `%${search}%` } },
+      ];
+    } else {
+      where[Op.or] = [
+        { nombre: { [Op.like]: `%${search}%` } },
+        { "$Proveedor.nombre$": { [Op.like]: `%${search}%` } },
+      ];
     }
-    const totalCompras = await models.Compra.count({
-      where: searchCondition,
-    });
+  }
 
-    const compras = await models.Compra.findAllData({
-      where: searchCondition,
-      limit: limite,
-      offset: desde,
-      order: [["idcompra", "DESC"]],
-    });
-    const totalPages = Math.ceil(totalCompras / limite);
+  const { count, rows } = await models.Compra.findAndCountAll({
+    where,
+    include: ["Proveedor", "Sucursal", "Usuario"],
+    limit: parseInt(limit),
+    offset,
+    order: [["createdAt", "DESC"]],
+    distinct: true,
+    subQuery: false,
+  });
 
-    return {
-      compras,
-      total: totalCompras,
-      totalPages: totalPages,
-      currentPage: pageNumber,
-    };
-  } catch (error) {}
-}
+  return {
+    data: rows,
+    meta: {
+      total: count,
+      totalPages: Math.ceil(count / parseInt(limit)),
+      currentPage: parseInt(page),
+      limit: parseInt(limit),
+    },
+  };
+};
 
-async function getCompra(req, transaction) {
-  const { id } = req.params;
-  const compra = await models.Compra.findOneData(id);
+/**
+ * Obtener compra por ID con detalles
+ */
+const getCompraFtr = async (id) => {
+  const compra = await models.Compra.findOne({
+    where: { _id: id },
+    include: [
+      { model: models.Proveedor, as: "Proveedor" },
+      { model: models.Sucursal, as: "Sucursal" },
+      { model: models.Usuario, as: "Usuario", attributes: { exclude: ["password"] } },
+      {
+        model: models.CompraDetalle,
+        as: "Detalles",
+        include: [{ model: models.Producto, as: "Producto" }],
+      },
+    ],
+  });
 
   if (!compra) {
-    throw { codigo: 404, message: `No existe el registro con el id ${id}` };
-  }
-
-  return compra;
-}
-async function detalleCompra(idcompra) {
-  try {
-    const encabezado = await models.Compra.findOne({
-      attributes: ["idcompra", "fecha", "direccion"],
-      include: [
-        {
-          model: models.Proveedor,
-          attributes: ["idproveedor", "nombre"],
-        },
-      ],
-      where: {
-        idcompra: idcompra,
-      },
-      raw: true, // Asegura que el resultado no esté anidado
-    });
-
-    const detalles = await models.CompraDetalle.findAll({
-      attributes: ["idcompra_detalle", "cantidad", "costo"],
-      include: [
-        {
-          model: models.Compra,
-          attributes: [],
-          where: {
-            idcompra: idcompra,
-          },
-        },
-        {
-          model: models.Producto,
-          attributes: ["nombre"],
-        },
-      ],
-      raw: true, // Esto asegura que el resultado sea plano (sin anidar los datos de las asociaciones)
-    });
-
-    return { encabezado, detalles };
-  } catch (error) {
-    console.error("Error al obtener los detalles de compra: ", error);
+    const error = new Error("Compra no encontrada");
+    error.status = 404;
     throw error;
   }
-}
+  return compra;
+};
 
-async function postCompra(req, transaction) {
-  const { body } = req;
-  const { detalles } = body;
+/**
+ * Crear compra + detalles + actualizar stock en almacén
+ * Body esperado:
+ * {
+ *   nombre, fecha, direccion, idproveedor, idusuario, idsucursal, total_compra,
+ *   detalles: [{ codigoprod, idsucursal, cantidad, costo }]
+ * }
+ */
+const createCompraFtr = async (body) => {
+  const transaction = await models.sequelize.transaction();
 
   try {
-    const compra = await models.Compra.create(body, { transaction });
-    // Crear los detalles de la compra en bulk
-    const detallesConIdCompra = detalles.map((detalle) => ({
-      ...detalle,
+    const { detalles = [], ...compraData } = body;
+
+    // ✅ VALIDACIONES
+    if (!compraData.idsucursal) {
+      throw new Error("La compra debe tener una sucursal");
+    }
+
+    if (!compraData.idusuario) {
+      throw new Error("La compra debe tener un usuario");
+    }
+
+    if (!detalles.length) {
+      throw new Error("La compra debe tener al menos un detalle");
+    }
+
+    for (const d of detalles) {
+      if (!d.codigoprod || !d.cantidad || !d.costo) {
+        throw new Error("Detalle incompleto");
+      }
+    }
+
+    // ✅ (PRO) Calcular total en backend
+    const totalCalculado = detalles.reduce((acc, d) => {
+      return acc + (Number(d.cantidad) * Number(d.costo));
+    }, 0);
+
+    compraData.total = totalCalculado;
+
+    // ✅ Crear compra
+    const compra = await models.Compra.create(compraData, { transaction });
+
+    // ✅ Crear detalles
+    const detallesConId = detalles.map((d) => ({
+      codigoprod: d.codigoprod,
+      cantidad: d.cantidad,
+      costo: d.costo,
       idcompra: compra._id,
     }));
 
-    // Crear los detalles en bulk (optimización)
-    await models.CompraDetalle.bulkCreate(detallesConIdCompra, { transaction });
+    await models.CompraDetalle.bulkCreate(detallesConId, { transaction });
 
-    // Procesar el stock en Almacen
+    // ✅ Actualizar stock + registrar kardex
     for (const detalle of detalles) {
       const almacen = await models.Almacen.findOne({
         where: {
           codigoprod: detalle.codigoprod,
-          idsucursal: detalle.idsucursal,
+          idsucursal: compra.idsucursal,
         },
+        transaction,
       });
 
-      if (almacen) {
-        // Si el producto ya existe en el almacén, incrementamos el stock
-        //almacen.stock += detalle.cantidad;
-        almacen.stock = Number(almacen.stock) + Number(detalle.cantidad);
+      let stockAnterior = 0;
+      let stockNuevo = 0;
 
+      if (almacen) {
+        stockAnterior = Number(almacen.stock);
+        stockNuevo = stockAnterior + Number(detalle.cantidad);
+
+        almacen.stock = stockNuevo;
         await almacen.save({ transaction });
       } else {
-        // Si no existe, creamos un nuevo registro
+        stockAnterior = 0;
+        stockNuevo = Number(detalle.cantidad);
+
         await models.Almacen.create(
           {
             codigoprod: detalle.codigoprod,
-            idsucursal: detalle.idsucursal,
-            stock: detalle.cantidad,
+            idsucursal: compra.idsucursal,
+            stock: stockNuevo,
             fecha: new Date(),
           },
           { transaction }
         );
       }
+
+      // REGISTRO EN KARDEX
+      await models.Kardex.create(
+        {
+          codigoprod: detalle.codigoprod,
+          idsucursal: compra.idsucursal,
+          idusuario: compra.idusuario,
+          tipo: "COMPRA",
+          cantidad: detalle.cantidad,
+          stock_anterior: stockAnterior,
+          stock_nuevo: stockNuevo,
+          referencia: compra._id,
+          fecha: new Date(),
+        },
+        { transaction }
+      );
     }
 
-    // Retornar la compra creada
-    return compra;
+    await transaction.commit();
+
+    return getCompraFtr(compra._id);
+
   } catch (error) {
-    console.error("Error en la creación de la compra: ", error);
-    throw error; // Lanza el error para que la transacción pueda ser revertida si es necesario
+    await transaction.rollback();
+    throw error;
   }
-}
+};
 
-async function putCompra(req, transaction) {
-  const { id } = req.params;
-  const { body } = req;
-  const compra = await models.Compra.findByPk(id);
-
-  if (!compra) {
-    throw { codigo: 404, message: `No existe el registro con el id ${id}` };
+/**
+ * Actualizar encabezado de compra (sin modificar detalles ni stock)
+ */
+const updateCompraFtr = async (id, body) => {
+  const transaction = await models.sequelize.transaction();
+  try {
+    const compra = await models.Compra.findByPk(id);
+    if (!compra) {
+      const error = new Error("Compra no encontrada");
+      error.status = 404;
+      throw error;
+    }
+    await compra.update(body, { transaction });
+    await transaction.commit();
+    return getCompraFtr(id);
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
   }
+};
 
-  await compra.update(body, { transaction });
-  return compra;
-}
+/**
+ * Soft delete: estado = false
+ */
+const deleteCompraFtr = async (id) => {
+  const transaction = await models.sequelize.transaction();
 
-async function deleteCompra(req, transaction) {
-  const { id } = req.params;
-  const compra = await models.Compra.findByPk(id);
+  try {
+    const compra = await models.Compra.findByPk(id);
 
-  if (!compra) {
-    throw { codigo: 404, message: `No existe el registro con el id ${id}` };
+    if (!compra) {
+      const error = new Error("Compra no encontrada");
+      error.status = 404;
+      throw error;
+    }
+
+    if (!compra.estado) {
+      throw new Error("La compra ya está anulada");
+    }
+
+    // Obtener detalles de la compra
+    const detalles = await models.CompraDetalle.findAll({
+      where: { idcompra: id },
+      transaction,
+    });
+
+    // Revertir stock + kardex
+    for (const detalle of detalles) {
+      const almacen = await models.Almacen.findOne({
+        where: {
+          codigoprod: detalle.codigoprod,
+          idsucursal: compra.idsucursal,
+        },
+        transaction,
+      });
+
+      if (almacen) {
+        const stockAnterior = Number(almacen.stock);
+        const stockNuevo = stockAnterior - Number(detalle.cantidad);
+
+        if (stockNuevo < 0) {
+          throw new Error("Stock negativo no permitido al anular compra");
+        }
+
+        almacen.stock = stockNuevo;
+        await almacen.save({ transaction });
+
+        // registrar reversa en kardex
+        await models.Kardex.create({
+          codigoprod: detalle.codigoprod,
+          idsucursal: compra.idsucursal,
+          idusuario: compra.idusuario,
+          tipo: "ANULACION_COMPRA",
+          cantidad: detalle.cantidad,
+          stock_anterior: stockAnterior,
+          stock_nuevo: stockNuevo,
+          referencia: id,
+          fecha: new Date(),
+        }, { transaction });
+      }
+    }
+
+    // Marcar compra como anulada
+    await compra.update({ estado: false }, { transaction });
+
+    await transaction.commit();
+
+    return true;
+
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
   }
-
-  await compra.update({ estado: false }, { transaction });
-  return compra;
-}
+};
 
 module.exports = {
-  getCompras,
-  getCompra,
-  postCompra,
-  putCompra,
-  deleteCompra,
-  detalleCompra,
+  getComprasFtr,
+  getCompraFtr,
+  createCompraFtr,
+  updateCompraFtr,
+  deleteCompraFtr,
 };

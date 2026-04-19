@@ -3,10 +3,11 @@ const { DataTypes } = require("sequelize");
 
 const Usuario = dbConnect.define('Usuario',{
         _id : {
-            field:'idusuarios', 
+            field:'idusuario', 
             type: DataTypes.INTEGER,
             primaryKey: true,
-            allowNull: false
+            allowNull: false,
+            autoIncrement: true,
         },
         nombre: {
             field:'nombre',

@@ -1,9 +1,8 @@
-require("dotenv").config();
-const { dbConnnectonMySql } = require("../config/db/connection");
 const runSeed = require("./seed");
 
-(async () => {
-  await dbConnnectonMySql();
-  await runSeed();
-  process.exit();
-})();
+runSeed()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

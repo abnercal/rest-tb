@@ -6,7 +6,8 @@ const Barcode = dbConnect.define('Barcode', {
             field:'idbarcode',
             type: DataTypes.INTEGER,
             primaryKey: true,
-            allowNull: true
+            allowNull: true,
+            autoIncrement: true,
         },
         barcode: {
             field:'barcode',

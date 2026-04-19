@@ -4,13 +4,21 @@ const { errorResponse, successResponse } = require("../../utils/handleError");
 const login = async (req, res) => {
   try {
     const data = await feature.login(req.body);
-    res.status(200).json(data);
+    return successResponse(res, "Inicio de sesión exitoso", data);
   } catch (error) {
-    const status = error.status || 500;
-    errorResponse(res, error, error.message, status);
+    return errorResponse(res, error, "Error al iniciar sesión");
   }
 };
 
+const logoutCtrl = async (req, res) => {
+  try {
+    const data = await feature.logoutFtr(req.user?.id);
+    return successResponse(res, "Sesión cerrada correctamente", data);
+  } catch (error) {
+    return errorResponse(res, error, "Error al cerrar sesión");
+  }
+};
 module.exports = {
   login,
+  logoutCtrl
 };

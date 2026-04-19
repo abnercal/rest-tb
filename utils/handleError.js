@@ -1,10 +1,9 @@
 /**
- * Manejador de errores HTTP centralizado.
- *
- * @param {Object}  res            - Objeto de respuesta de Express
- * @param {Error}   error          - Error capturado
- * @param {string}  [message] - Mensaje genérico para producción
- * @param {number}  [statusCode]   - Código HTTP (default: error.status || 500)
+ * Respuesta de error centralizada
+ * @param {Object}  res         - Objeto de respuesta de Express
+ * @param {Error}   error       - Error capturado
+ * @param {string}  message     - Mensaje genérico
+ * @param {number}  statusCode  - Código HTTP (default: error.status || 500)
  */
 const errorResponse  = (res, error, message = "Algo salió mal", statusCode = null) => {
   const status = statusCode || error.status || 500;
@@ -22,6 +21,8 @@ const errorResponse  = (res, error, message = "Algo salió mal", statusCode = nu
   return res.status(status).json({
     ok: false,
     message:finalMessage,
+    data: null,
+    meta: null,
     ...(process.env.NODE_ENV === "development" && {
       error: error?.message || error,
     }),
@@ -30,6 +31,11 @@ const errorResponse  = (res, error, message = "Algo salió mal", statusCode = nu
 
 /**
  * Respuesta exitosa
+ * @param {Object}  res     - Objeto de respuesta de Express
+ * @param {string}  message - Mensaje descriptivo
+ * @param {*}       data    - Datos a retornar
+ * @param {Object}  meta    - Metadatos de paginación
+ * @param {number}  status  - Código HTTP (default: 200)
  */
 const successResponse = (res, message = "OK", data = null, meta = null, status = 200) => {
   return res.status(status).json({

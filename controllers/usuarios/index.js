@@ -4,71 +4,70 @@ const { successResponse, errorResponse } = require("../../utils/handleError");
 /**
  * Obtener todos los usuarios
  */
-const getUsuarios = async (req, res) => {
+const getUsuariosCtrl = async (req, res) => {
   try {
-    const usuarios = await feature.getUsuarios(req.query);
-    res.status(200).json(usuarios);
+    const result = await feature.getUsuariosFtr(req.query);
+    return successResponse(res, "Lista de usuarios", result.data, result.meta);
   } catch (error) {
-    errorResponse(res, error, "Error al obtener los usuarios", 500);
+    errorResponse(res, error, "Error al obtener los usuarios");
   }
 };
 
 /**
  * Obtener usuario por ID
  */
-const getUsuarioById = async (req, res) => {
+const getUsuarioCtrl = async (req, res) => {
   try {
     const { id } = req.params;
-    const usuario = await feature.getUsuarioById(id);
+    const usuario = await feature.getUsuarioFtr(id);
     res.status(200).json(usuario);
   } catch (error) {
-    errorResponse(res, error, "Error al obtener el usuario", 500);
+    errorResponse(res, error, "Error al obtener el usuario");
   }
 };
 
 /**
  * Crear usuario
  */
-const crearUsuario = async (req, res) => {
+const createUsuarioCtrl = async (req, res) => {
   try {
-    const usuario = await feature.createUsuario(req.body);
-    res.status(201).json(usuario);
+    const data = await feature.createUsuarioFtr(req.body);
+    return successResponse(res, "Usuario creado", data, null, 201);
   } catch (error) {
-    const status = error.status || 500;
-    errorResponse(res, error, error.message, status);
+    return errorResponse(res, error, "Error al crear usuario");
   }
 };
 
 /**
  * Actualizar usuario
  */
-const updateUsuario = async (req, res) => {
+const updateUsuarioCtrl = async (req, res) => {
   try {
     const { id } = req.params;
-    const usuario = await feature.updateUsuario(id, req.body);
-    res.status(200).json(usuario);
+    const data = await feature.updateUsuarioFtr(id, req.body);
+    return successResponse(res, "Usuario actualizado", data);
   } catch (error) {
-    errorResponse(res, error, "Error al actualizar el usuario", 500);
+    return errorResponse(res, error, "Error al actualizar usuario");
   }
 };
 
 /**
  * Eliminar usuario
  */
-const deleteUsuario = async (req, res) => {
+const deleteUsuarioCtrl = async (req, res) => {
   try {
     const { id } = req.params;
-    await feature.deleteUsuario(id);
-    res.status(204).send();
+    await feature.deleteUsuarioFtr(id);
+    return successResponse(res, "Usuario eliminado");
   } catch (error) {
-    errorResponse(res, error, "Error al eliminar el usuario", 500);
+    return errorResponse(res, error, "Error al eliminar usuario");
   }
 };
 
 module.exports = {
-  getUsuarios,
-  getUsuarioById,
-  crearUsuario,
-  updateUsuario,
-  deleteUsuario,
+  getUsuariosCtrl,
+  getUsuarioCtrl,
+  createUsuarioCtrl,
+  updateUsuarioCtrl,
+  deleteUsuarioCtrl,
 };

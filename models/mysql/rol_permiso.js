@@ -14,7 +14,7 @@ const RolPermiso = dbConnect.define("RolPermiso", {
             allowNull: false,
         },
         idpermiso: {
-            field:'idpermisos',
+            field:'idpermiso',
             type: DataTypes.INTEGER,
             allowNull: false,
         },

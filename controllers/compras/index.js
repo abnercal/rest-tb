@@ -1,83 +1,58 @@
-const { response, request } = require("express");
-const { dbConnect } = require("../../config/db/connection");
+const feature = require("./feature");
 const { successResponse,errorResponse } = require("../../utils/handleError");
-const {
-  getCompras,
-  getCompra,
-  postCompra,
-  putCompra,
-  deleteCompra,
-  detalleCompra,
-} = require("./feature");
 
-async function getComprasCtrl(req, res) {
-  try {
-    const { compras, total, totalPages, currentPage } = await getCompras(req);
-    return res.status(200).json({
-      msg: "Lista de productos",
-      compras,
-      total,
-      totalPages,
-      currentPage,
-    });
-  } catch (error) {
-    return errorResponse(res, error);
-    //return res.status(error.codigo || 500).send({ message: `${error.message || error}` });
-  }
-}
 
-async function getCompraCtrl(req, res) {
+const getComprasCtrl = async (req, res) => {
   try {
-    const { id } = req.params;
-    let compra = await detalleCompra(id);
-    return res.status(200).json({ compra });
+    const result = await feature.getComprasFtr(req.query);
+    return successResponse(res, "Lista de compras", result.data, result.meta);
   } catch (error) {
-    return errorResponse(res, error);
+    return errorResponse(res, error, "Error al obtener compras");
   }
-}
+};
 
-async function postCompraCtrl(req, res) {
-  let transaction = await dbConnect.transaction();
-  try {
-    let compra = await postCompra(req, transaction);
-    transaction.commit();
-    return res.status(201).json({ msg: "Compra creada correctamente", compra });
-  } catch (error) {
-    transaction.rollback();
-    return errorResponse(res, error);
-  }
-}
 
-async function putCompraCtrl(req, res) {
-  let transaction = await dbConnect.transaction();
+const getCompraCtrl = async (req, res) => {
   try {
-    let compra = await putCompra(req, transaction);
-    transaction.commit();
-    return res.status(200).json({ msg: "Transaccion correcta", compra });
+    const result = await feature.getCompraFtr(req.params.id);
+    return successResponse(res, "Compra encontrada", result);
   } catch (error) {
-    transaction.rollback();
-    return errorResponse(res, error);
+    return errorResponse(res, error, "Error al obtener compra");
   }
-}
+};
 
-async function deleteCompraCtrl(req, res) {
-  let transaction = await dbConnect.transaction();
+const createCompraCtrl = async (req, res) => {
   try {
-    let compra = await deleteCompra(req, transaction);
-    transaction.commit();
-    return res
-      .status(200)
-      .json({ msg: "Compra eliminada correctamente", compra });
+    const data = await feature.createCompraFtr(req.body);
+    return successResponse(res, "Compra registrada", data, null, 201);
   } catch (error) {
-    transaction.rollback();
-    return errorResponse(res, error);
+    return errorResponse(res, error, "Error al registrar compra");
   }
-}
+};
+
+const updateCompraCtrl = async (req, res) => {
+  try {
+    const data = await feature.updateCompraFtr(req.params.id, req.body);
+    return successResponse(res, "Compra actualizada", data);
+  } catch (error) {
+    return errorResponse(res, error, "Error al actualizar compra");
+  }
+};
+
+const deleteCompraCtrl = async (req, res) => {
+  try {
+    await feature.deleteCompraFtr(req.params.id);
+    return successResponse(res, "Compra eliminada");
+  } catch (error) {
+    return errorResponse(res, error, "Error al eliminar compra");
+  }
+};
 
 module.exports = {
   getComprasCtrl,
   getCompraCtrl,
-  postCompraCtrl,
-  putCompraCtrl,
+  createCompraCtrl,
+  updateCompraCtrl,
   deleteCompraCtrl,
 };
+
