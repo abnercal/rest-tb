@@ -168,8 +168,13 @@ async function runSeed() {
       { transaction }
     );
 
-    const tipoClienteGenerico = await db.TipoCliente.create(
-      { nombre: "Consumidor Final", estado: 1 },
+    const tipoMayorista = await db.TipoCliente.create(
+      { nombre: "Mayorista", estado: 1 },
+      { transaction }
+    );
+
+    const tipoMinorista = await db.TipoCliente.create(
+      { nombre: "Minorista", estado: 1 },
       { transaction }
     );
 
@@ -181,8 +186,9 @@ async function runSeed() {
         apellidos: "Final",
         email:     "cf@sistema.com",
         telefono:  "00000000",
+        direccion: "N/A",
         estado:    1,
-        idtipoCli: tipoClienteGenerico.idtipoCli,
+        idtipoCli: tipoMinorista.idtipoCli,
       },
       { transaction }
     );

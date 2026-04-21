@@ -26,6 +26,11 @@ const Cliente = dbConnect.define('Cliente', {
     type: DataTypes.STRING(45),
     allowNull: true
   },
+  direccion: {
+    field: "direccion",
+    type: DataTypes.STRING(150),
+    allowNull: true
+  },
   email: {
     field: "email",
     type: DataTypes.STRING(50),
