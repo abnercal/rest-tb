@@ -1,16 +1,30 @@
 const models = require("../../models/mysql/index");
 const bcrypt = require("bcryptjs");
 const { Op } = require("sequelize");
-
+const { deleteImageFile } = require("../../utils/imagen");
 /**
  * Campos que NO deben enviarse al cliente
  */
 const EXCLUDE_FIELDS = ["password"];
 
+const buildImageUrl = (req, imagePath) => {
+  if (!imagePath) return null;
+  const base = `${req.protocol}://${req.get('host')}`;
+  return `${base}${imagePath}`;
+};
+
+// ─── Transformar rows para incluir imageUrl ───────────────────────────────────
+const toDTO = (req, usuario) => {
+  const data = typeof usuario.toJSON === 'function' ? usuario.toJSON() : { ...usuario };
+  delete data.password;
+  data.imageUrl = buildImageUrl(req, data.imagen);
+  return data;
+};
+
 /**
  * Obtener todos los usuarios
  */
-const getUsuariosFtr = async (query = {}) => {
+const getUsuariosFtr = async (req, query = {}) => {
     const { page = 1, limit = 10, search = "" } = query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -39,7 +53,7 @@ const getUsuariosFtr = async (query = {}) => {
   });
 
   return {
-    data: rows,
+    data: rows.map((u) => toDTO(req, u)),
     meta: {
       total: count,
       totalPages: Math.ceil(count / parseInt(limit)),
@@ -52,7 +66,7 @@ const getUsuariosFtr = async (query = {}) => {
 /**
  * Obtener usuario por ID
  */
-const getUsuarioFtr = async (id) => {
+const getUsuarioFtr = async (req, id) => {
   const usuario = await models.Usuario.findOne({
     where: { _id: id, estado: 1 },
     attributes: { exclude: EXCLUDE_FIELDS },
@@ -68,21 +82,25 @@ const getUsuarioFtr = async (id) => {
     throw error;
   }
 
-  return usuario;
+  return toDTO(req, usuario);
 };
 
 /**
  * Crear usuario (password encriptado)
  */
-const createUsuarioFtr = async (data) => {
+const createUsuarioFtr = async (req, data, file) => {
   const transaction = await models.sequelize.transaction();
 
   try {
     const { email, password, roles = [], ...rest } = data;
 
+    const imagen = file ? `/usuarios/${file.filename}` : null;
+
     // Validar email duplicado
     const existeEmail = await models.Usuario.findOne({ where: { email }, transaction });
     if (existeEmail) {
+      // Si ya subió imagen pero el correo está duplicado, borrarla
+      if (file) deleteImageFile(imagen);
       const error = new Error("El correo ya está registrado");
       error.status = 409;
       throw error;
@@ -92,7 +110,7 @@ const createUsuarioFtr = async (data) => {
     const passwordHash = bcrypt.hashSync(password, salt);
 
     const nuevoUsuario = await models.Usuario.create(
-      { ...rest, email, password: passwordHash },
+      { ...rest, email, password: passwordHash, imagen },
       { transaction }
     );
 
@@ -107,9 +125,10 @@ const createUsuarioFtr = async (data) => {
 
     await transaction.commit();
 
-    const response = nuevoUsuario.toJSON();
+    /* const response = nuevoUsuario.toJSON();
     delete response.password;
-    return response;
+    return response; */
+    return toDTO(req, nuevoUsuario);
   } catch (error) {
     await transaction.rollback();
 
@@ -133,13 +152,15 @@ const createUsuarioFtr = async (data) => {
 /**
  * Actualizar usuario (si viene password, se encripta)
  */
-const updateUsuarioFtr = async (id, data) => {
+const updateUsuarioFtr = async (req, id, data, file) => {
   const transaction = await models.sequelize.transaction();
 
   try {
     const usuario = await models.Usuario.findByPk(id);
 
     if (!usuario || usuario.estado !== 1) {
+      // Si se subió imagen nueva pero el usuario no existe, borrarla
+      if (file) deleteImageFile(`/usuarios/${file.filename}`);
       const error = new Error("Usuario no encontrado");
       error.status = 404;
       throw error;
@@ -150,6 +171,12 @@ const updateUsuarioFtr = async (id, data) => {
     if (password) {
       const salt = bcrypt.genSaltSync(10);
       rest.password = bcrypt.hashSync(password, salt);
+    }
+    
+    // Si viene nueva imagen → borrar la anterior y asignar la nueva
+    if (file) {
+      deleteImageFile(usuario.imagen);          // borra la vieja del disco
+      rest.imagen = `/usuarios/${file.filename}`;
     }
 
     await usuario.update(rest, { transaction });
@@ -165,9 +192,11 @@ const updateUsuarioFtr = async (id, data) => {
 
     await transaction.commit();
 
-    const response = usuario.toJSON();
+    /* const response = usuario.toJSON();
     delete response.password;
-    return response;
+    return response; */
+
+    return toDTO(req, usuario);
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -185,6 +214,9 @@ const deleteUsuarioFtr = async (id) => {
     error.status = 404;
     throw error;
   }
+
+  // Borrar imagen del disco antes del soft delete
+  deleteImageFile(usuario.imagen);
 
   await usuario.update({ estado: 0 });
   return true;

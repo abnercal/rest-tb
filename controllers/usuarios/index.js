@@ -6,7 +6,7 @@ const { successResponse, errorResponse } = require("../../utils/handleError");
  */
 const getUsuariosCtrl = async (req, res) => {
   try {
-    const result = await feature.getUsuariosFtr(req.query);
+    const result = await feature.getUsuariosFtr(req, req.query);
     return successResponse(res, "Lista de usuarios", result.data, result.meta);
   } catch (error) {
     errorResponse(res, error, "Error al obtener los usuarios");
@@ -19,7 +19,7 @@ const getUsuariosCtrl = async (req, res) => {
 const getUsuarioCtrl = async (req, res) => {
   try {
     const { id } = req.params;
-    const usuario = await feature.getUsuarioFtr(id);
+    const usuario = await feature.getUsuarioFtr(req, id);
     res.status(200).json(usuario);
   } catch (error) {
     errorResponse(res, error, "Error al obtener el usuario");
@@ -31,7 +31,7 @@ const getUsuarioCtrl = async (req, res) => {
  */
 const createUsuarioCtrl = async (req, res) => {
   try {
-    const data = await feature.createUsuarioFtr(req.body);
+    const data = await feature.createUsuarioFtr(req, req.body, req.file);
     return successResponse(res, "Usuario creado", data, null, 201);
   } catch (error) {
     return errorResponse(res, error, "Error al crear usuario");
@@ -44,7 +44,7 @@ const createUsuarioCtrl = async (req, res) => {
 const updateUsuarioCtrl = async (req, res) => {
   try {
     const { id } = req.params;
-    const data = await feature.updateUsuarioFtr(id, req.body);
+    const data = await feature.updateUsuarioFtr(req, id, req.body, req.file);
     return successResponse(res, "Usuario actualizado", data);
   } catch (error) {
     return errorResponse(res, error, "Error al actualizar usuario");
