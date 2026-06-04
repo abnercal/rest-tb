@@ -21,6 +21,8 @@ class Server {
             clientes: '/api/clientes',
             sucursales: '/api/sucursales',
             tipocliente: '/api/tipocliente',
+            roles: '/api/roles',
+            permisos: '/api/permisos',
         }
 
         //Conectar a base de datos
@@ -62,6 +64,8 @@ class Server {
         this.app.use(this.paths.ventas, require('../routes/ventas'))
         this.app.use(this.paths.clientes, require('../routes/clientes'))
         this.app.use(this.paths.tipocliente, require('../routes/tipoclie'))
+        this.app.use(this.paths.roles, require('../routes/roles'))
+        this.app.use(this.paths.permisos, require('../routes/permisos'))
         this.app.use('*',(req,res) => {
             res.status(404).json({
                 errors: {
