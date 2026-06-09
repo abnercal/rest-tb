@@ -63,6 +63,7 @@ class Server {
         this.app.use(this.paths.compras, require('../routes/compras'))
         this.app.use(this.paths.ventas, require('../routes/ventas'))
         this.app.use(this.paths.clientes, require('../routes/clientes'))
+        this.app.use(this.paths.sucursales, require('../routes/sucursales'))
         this.app.use(this.paths.tipocliente, require('../routes/tipoclie'))
         this.app.use(this.paths.roles, require('../routes/roles'))
         this.app.use(this.paths.permisos, require('../routes/permisos'))

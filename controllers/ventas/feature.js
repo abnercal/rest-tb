@@ -28,7 +28,14 @@ const getVentasFtr = async (query) => {
 
   const { count, rows } = await models.Orden.findAndCountAll({
     where,
-    include: [{ model: models.Cliente, as: "Cliente" }],
+    include: [
+      { model: models.Cliente, as: "Cliente" },
+      {
+        model: models.OrdenDetalle,
+        as: "Detalles",
+        include: [{ model: models.Producto }],
+      },
+    ],
     limit: parseInt(limit),
     offset,
     order: [["createdAt", "DESC"]],

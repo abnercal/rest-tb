@@ -28,7 +28,14 @@ const getComprasFtr = async (query) => {
 
   const { count, rows } = await models.Compra.findAndCountAll({
     where,
-    include: ["Proveedor", "Sucursal", "Usuario"],
+    include: [
+      "Proveedor", "Sucursal", "Usuario",
+      {
+        model: models.CompraDetalle,
+        as: "Detalles",
+        include: [{ model: models.Producto, as: "Producto" }],
+      },
+    ],
     limit: parseInt(limit),
     offset,
     order: [["createdAt", "DESC"]],
