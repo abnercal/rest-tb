@@ -9,24 +9,35 @@ const createProductoValidator = [
     .withMessage("El nombre del producto debe ser un texto"),
 
   body("idmarca")
-    .optional()
+    .optional({ values: "null" })
     .isInt()
     .withMessage("La marca debe ser un ID numérico"),
 
-  body("idpresentacion")
-    .optional()
-    .isInt()
-    .withMessage("La presentación debe ser un ID numérico"),
-
   body("idcategoria")
-    .optional()
+    .optional({ values: "null" })
     .isInt()
     .withMessage("La categoría debe ser un ID numérico"),
 
   body("idunidad")
-    .optional()
+    .optional({ values: "null" })
     .isInt()
     .withMessage("La unidad debe ser un ID numérico"),
+
+  body("presentaciones")
+    .optional()
+    .isArray()
+    .withMessage("Las presentaciones deben ser un arreglo"),
+
+  body("presentaciones.*.idpresentacion")
+    .if(body("presentaciones").exists())
+    .isInt()
+    .withMessage("Cada presentación debe tener un ID válido"),
+
+  body("presentaciones.*.cantidad_base")
+    .if(body("presentaciones").exists())
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("La cantidad base debe ser un número positivo"),
 
   validateResults,
 ];
@@ -38,24 +49,29 @@ const updateProductoValidator = [
     .withMessage("El nombre del producto debe ser un texto"),
 
   body("idmarca")
-    .optional()
+    .optional({ values: "null" })
     .isInt()
     .withMessage("La marca debe ser un ID numérico"),
 
-  body("idpresentacion")
-    .optional()
-    .isInt()
-    .withMessage("La presentación debe ser un ID numérico"),
-
   body("idcategoria")
-    .optional()
+    .optional({ values: "null" })
     .isInt()
     .withMessage("La categoría debe ser un ID numérico"),
 
   body("idunidad")
-    .optional()
+    .optional({ values: "null" })
     .isInt()
     .withMessage("La unidad debe ser un ID numérico"),
+
+  body("presentaciones")
+    .optional()
+    .isArray()
+    .withMessage("Las presentaciones deben ser un arreglo"),
+
+  body("presentaciones.*.idpresentacion")
+    .if(body("presentaciones").exists())
+    .isInt()
+    .withMessage("Cada presentación debe tener un ID válido"),
 
   validateResults,
 ];

@@ -32,8 +32,8 @@ const Precio = dbConnect.define('Precio', {
     type: DataTypes.STRING(45),
     allowNull: true
   },
-  codigoprod: {
-    field:'codigoprod',
+  idprodPresenta: {
+    field:'idprodPresenta',
     type: DataTypes.INTEGER,
     allowNull: true
   },
@@ -43,9 +43,15 @@ const Precio = dbConnect.define('Precio', {
     allowNull: true
   }
 }, {
-  tableName: 'precios', // Nombre de la tabla en la base de datos
-  timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
+  tableName: 'precios',
+  timestamps: false,
 });
 
+Precio.associate = (models) => {
+  Precio.belongsTo(models.ProductoPresentacion, {
+    foreignKey: 'idprodPresenta',
+    as: 'ProductoPresentacion',
+  });
+};
 
 module.exports = Precio;

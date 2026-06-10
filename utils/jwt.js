@@ -16,6 +16,7 @@ const signToken = (usuario, roles = [], permisos = []) => {
     {
       id: usuario._id,
       email: usuario.email,
+      idsucursal: usuario.idsucursal,
       roles,
       permisos,
     },

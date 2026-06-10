@@ -28,8 +28,8 @@ const CompraDetalle = dbConnect.define('CompraDetalle', {
     type: DataTypes.STRING(36),
     allowNull: false
   },
-  codigoprod: {
-    field:'codigoprod',
+  idprodPresenta: {
+    field:'idprodPresenta',
     type: DataTypes.INTEGER,
     allowNull: false
   }
@@ -38,22 +38,34 @@ const CompraDetalle = dbConnect.define('CompraDetalle', {
   timestamps: false,
 });
 
-// Asociaciones
 CompraDetalle.associate = (models) => {
-  CompraDetalle.belongsTo(models.Compra, { 
+  CompraDetalle.belongsTo(models.Compra, {
     foreignKey: 'idcompra',
-    as: 'Compras'
+    as: 'Compra',
   });
-  CompraDetalle.belongsTo(models.Producto, { 
-    foreignKey: 'codigoprod',
-    as: 'Producto'
+  CompraDetalle.belongsTo(models.ProductoPresentacion, {
+    foreignKey: 'idprodPresenta',
+    as: 'ProductoPresentacion',
   });
-}
+};
+
 CompraDetalle.findAllData  = function(){
-  return CompraDetalle.findAll({include:[Compras,Producto]})
-}
+  return CompraDetalle.findAll({
+    include: [
+      { association: 'Compra' },
+      { association: 'ProductoPresentacion', include: ['Producto', 'Presentacion'] },
+    ],
+  });
+};
 
 CompraDetalle.findOneData  = function(_id){
-  return CompraDetalle.findOne({where:{_id},include:[Compras,Producto]})
-}
+  return CompraDetalle.findOne({
+    where: { _id },
+    include: [
+      { association: 'Compra' },
+      { association: 'ProductoPresentacion', include: ['Producto', 'Presentacion'] },
+    ],
+  });
+};
+
 module.exports = CompraDetalle;

@@ -31,11 +31,6 @@ const Producto = dbConnect.define('Producto', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
-  idpresentacion: {
-    field: "idpresentacion",
-    type: DataTypes.INTEGER,
-    allowNull: true,
-  },
   idcategoria: {
     field: "idcategoria",
     type: DataTypes.INTEGER,
@@ -47,16 +42,16 @@ const Producto = dbConnect.define('Producto', {
     allowNull: false,
     defaultValue: 1
   },
-  precio: {
-    field: "precio",
-    type: DataTypes.DECIMAL(18, 2),
-    allowNull: true,
-    defaultValue: 0
-  },
   idunidad: {
     field: "idunidad",
     type: DataTypes.INTEGER,
     allowNull: true
+  },
+  stock_minimo: {
+    field: "stock_minimo",
+    type: DataTypes.DECIMAL(18,2),
+    allowNull: true,
+    defaultValue: 0
   }
 }, {
   tableName: 'producto', // Nombre de la tabla en la base de datos
@@ -68,10 +63,6 @@ Producto.associate = (models) => {
     foreignKey: 'idmarca',
     as:'Marca'
   })
-  Producto.belongsTo(models.Presentacion, {
-    foreignKey: 'idpresentacion',
-    as:'Presentacion'
-  })
   Producto.belongsTo(models.Categoria, {
     foreignKey: 'idcategoria',
     as:'Categoria'
@@ -80,13 +71,29 @@ Producto.associate = (models) => {
     foreignKey: 'idunidad',
     as:'Unidad'
   })
+  Producto.hasMany(models.ProductoPresentacion, {
+    foreignKey: 'codigoprod',
+    as: 'Presentaciones',
+  });
 } 
 
 Producto.findAllData  = function(options = {}){
-  return Producto.findAll({include:['Marca','Presentacion','Categoria','Unidad'],...options})
+  return Producto.findAll({
+    include: [
+      'Marca', 'Categoria', 'Unidad',
+      { association: 'Presentaciones', include: ['Presentacion'] },
+    ],
+    ...options,
+  })
 }
 
 Producto.findOneData  = function(codigoprod){
-  return Producto.findOne({where:{codigoprod},include:['Marca','Presentacion','Categoria','Unidad']})
+  return Producto.findOne({
+    where: { codigoprod },
+    include: [
+      'Marca', 'Categoria', 'Unidad',
+      { association: 'Presentaciones', include: ['Presentacion'] },
+    ],
+  })
 }
 module.exports = Producto;

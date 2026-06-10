@@ -2,8 +2,8 @@ const { Op } = require("sequelize");
 const models = require("../../models/mysql");
 
 const getProveedoresFtr = async (query) => {
-  const { page = 1, limit = 20, search = "" } = query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const search = query.search || "";
+  const hasPagination = query.page !== undefined || query.limit !== undefined;
 
   let where = { estado: 1 };
   if (search) {
@@ -14,22 +14,23 @@ const getProveedoresFtr = async (query) => {
     ];
   }
 
-  const { count, rows } = await models.Proveedor.findAndCountAll({
-    where,
-    limit: parseInt(limit),
-    offset,
-    order: [["nombre", "ASC"]],
-  });
+  let findOptions = { where, order: [["nombre", "ASC"]] };
 
-  return {
-    data: rows,
-    meta: {
-      total: count,
-      totalPages: Math.ceil(count / parseInt(limit)),
-      currentPage: parseInt(page),
-      limit: parseInt(limit),
-    },
-  };
+  if (hasPagination) {
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 20;
+    findOptions.limit = limit;
+    findOptions.offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Proveedor.findAndCountAll(findOptions);
+    return {
+      data: rows,
+      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
+    };
+  }
+
+  const { count, rows } = await models.Proveedor.findAndCountAll(findOptions);
+  return { data: rows, meta: { total: count } };
 };
 
 const getProveedorFtr = async (id) => {

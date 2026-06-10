@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "dev": "node --watch app.js",
+    "predev": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\"",
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed": "node Seeders/runSeed.js"
   },

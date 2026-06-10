@@ -3,11 +3,25 @@ const moment = require("moment");
 const models = require("../../models/mysql");
 
 /**
+ * Helper: include de detalle con presentación
+ */
+const INCLUDE_DETALLE = () => ({
+  model: models.CompraDetalle,
+  as: "Detalles",
+  include: [
+    {
+      association: "ProductoPresentacion",
+      include: ["Producto", "Presentacion"],
+    },
+  ],
+});
+
+/**
  * Listar compras con paginación y búsqueda por fecha o proveedor
  */
 const getComprasFtr = async (query) => {
-  const { page = 1, limit = 10, search = "" } = query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const search = query.search || "";
+  const hasPagination = query.page !== undefined || query.limit !== undefined;
 
   let where = { estado: true };
 
@@ -26,32 +40,29 @@ const getComprasFtr = async (query) => {
     }
   }
 
-  const { count, rows } = await models.Compra.findAndCountAll({
+  let findOptions = {
     where,
-    include: [
-      "Proveedor", "Sucursal", "Usuario",
-      {
-        model: models.CompraDetalle,
-        as: "Detalles",
-        include: [{ model: models.Producto, as: "Producto" }],
-      },
-    ],
-    limit: parseInt(limit),
-    offset,
+    include: ["Proveedor", "Sucursal", "Usuario", INCLUDE_DETALLE()],
     order: [["createdAt", "DESC"]],
     distinct: true,
     subQuery: false,
-  });
-
-  return {
-    data: rows,
-    meta: {
-      total: count,
-      totalPages: Math.ceil(count / parseInt(limit)),
-      currentPage: parseInt(page),
-      limit: parseInt(limit),
-    },
   };
+
+  if (hasPagination) {
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 10;
+    findOptions.limit = limit;
+    findOptions.offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Compra.findAndCountAll(findOptions);
+    return {
+      data: rows,
+      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
+    };
+  }
+
+  const { count, rows } = await models.Compra.findAndCountAll(findOptions);
+  return { data: rows, meta: { total: count } };
 };
 
 /**
@@ -64,11 +75,7 @@ const getCompraFtr = async (id) => {
       { model: models.Proveedor, as: "Proveedor" },
       { model: models.Sucursal, as: "Sucursal" },
       { model: models.Usuario, as: "Usuario", attributes: { exclude: ["password"] } },
-      {
-        model: models.CompraDetalle,
-        as: "Detalles",
-        include: [{ model: models.Producto, as: "Producto" }],
-      },
+      INCLUDE_DETALLE(),
     ],
   });
 
@@ -84,8 +91,8 @@ const getCompraFtr = async (id) => {
  * Crear compra + detalles + actualizar stock en almacén
  * Body esperado:
  * {
- *   nombre, fecha, direccion, idproveedor, idusuario, idsucursal, total_compra,
- *   detalles: [{ codigoprod, idsucursal, cantidad, costo }]
+ *   nombre, fecha, direccion, idproveedor, idusuario, idsucursal,
+ *   detalles: [{ idprodPresenta, cantidad, costo }]
  * }
  */
 const createCompraFtr = async (body) => {
@@ -108,12 +115,12 @@ const createCompraFtr = async (body) => {
     }
 
     for (const d of detalles) {
-      if (!d.codigoprod || !d.cantidad || !d.costo) {
+      if (!d.idprodPresenta || !d.cantidad || !d.costo) {
         throw new Error("Detalle incompleto");
       }
     }
 
-    // ✅ (PRO) Calcular total en backend
+    // ✅ Calcular total en backend
     const totalCalculado = detalles.reduce((acc, d) => {
       return acc + (Number(d.cantidad) * Number(d.costo));
     }, 0);
@@ -123,21 +130,32 @@ const createCompraFtr = async (body) => {
     // ✅ Crear compra
     const compra = await models.Compra.create(compraData, { transaction });
 
-    // ✅ Crear detalles
-    const detallesConId = detalles.map((d) => ({
-      codigoprod: d.codigoprod,
-      cantidad: d.cantidad,
-      costo: d.costo,
-      idcompra: compra._id,
-    }));
-
-    await models.CompraDetalle.bulkCreate(detallesConId, { transaction });
-
-    // ✅ Actualizar stock + registrar kardex
+    // ✅ Crear detalles + actualizar stock + kardex
     for (const detalle of detalles) {
+      const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
+        include: ["Producto"],
+        transaction,
+      });
+
+      if (!pp) {
+        throw new Error(`Presentación ${detalle.idprodPresenta} no existe`);
+      }
+
+      await models.CompraDetalle.create(
+        {
+          cantidad: detalle.cantidad,
+          costo: detalle.costo,
+          idcompra: compra._id,
+          idprodPresenta: detalle.idprodPresenta,
+        },
+        { transaction }
+      );
+
+      const unidadesBase = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
       const almacen = await models.Almacen.findOne({
         where: {
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: compra.idsucursal,
         },
         transaction,
@@ -148,19 +166,20 @@ const createCompraFtr = async (body) => {
 
       if (almacen) {
         stockAnterior = Number(almacen.stock);
-        stockNuevo = stockAnterior + Number(detalle.cantidad);
+        stockNuevo = stockAnterior + unidadesBase;
 
         almacen.stock = stockNuevo;
         await almacen.save({ transaction });
       } else {
         stockAnterior = 0;
-        stockNuevo = Number(detalle.cantidad);
+        stockNuevo = unidadesBase;
 
         await models.Almacen.create(
           {
-            codigoprod: detalle.codigoprod,
+            codigoprod: pp.codigoprod,
             idsucursal: compra.idsucursal,
             stock: stockNuevo,
+            stock_minimo: Number(pp.Producto?.stock_minimo) || 0,
             fecha: new Date(),
           },
           { transaction }
@@ -170,11 +189,11 @@ const createCompraFtr = async (body) => {
       // REGISTRO EN KARDEX
       await models.Kardex.create(
         {
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: compra.idsucursal,
           idusuario: compra.idusuario,
           tipo: "COMPRA",
-          cantidad: detalle.cantidad,
+          cantidad: unidadesBase,
           stock_anterior: stockAnterior,
           stock_nuevo: stockNuevo,
           referencia: compra._id,
@@ -216,7 +235,7 @@ const updateCompraFtr = async (id, body) => {
 };
 
 /**
- * Soft delete: estado = false
+ * Anular compra: reversa de stock
  */
 const deleteCompraFtr = async (id) => {
   const transaction = await models.sequelize.transaction();
@@ -225,26 +244,28 @@ const deleteCompraFtr = async (id) => {
     const compra = await models.Compra.findByPk(id);
 
     if (!compra) {
-      const error = new Error("Compra no encontrada");
-      error.status = 404;
-      throw error;
+      throw new Error("Compra no encontrada");
     }
 
     if (!compra.estado) {
       throw new Error("La compra ya está anulada");
     }
 
-    // Obtener detalles de la compra
     const detalles = await models.CompraDetalle.findAll({
       where: { idcompra: id },
       transaction,
     });
 
-    // Revertir stock + kardex
     for (const detalle of detalles) {
+      const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
+        transaction,
+      });
+
+      const unidadesARevertir = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
       const almacen = await models.Almacen.findOne({
         where: {
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: compra.idsucursal,
         },
         transaction,
@@ -252,7 +273,7 @@ const deleteCompraFtr = async (id) => {
 
       if (almacen) {
         const stockAnterior = Number(almacen.stock);
-        const stockNuevo = stockAnterior - Number(detalle.cantidad);
+        const stockNuevo = stockAnterior - unidadesARevertir;
 
         if (stockNuevo < 0) {
           throw new Error("Stock negativo no permitido al anular compra");
@@ -261,13 +282,12 @@ const deleteCompraFtr = async (id) => {
         almacen.stock = stockNuevo;
         await almacen.save({ transaction });
 
-        // registrar reversa en kardex
         await models.Kardex.create({
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: compra.idsucursal,
           idusuario: compra.idusuario,
           tipo: "ANULACION_COMPRA",
-          cantidad: detalle.cantidad,
+          cantidad: unidadesARevertir,
           stock_anterior: stockAnterior,
           stock_nuevo: stockNuevo,
           referencia: id,
@@ -276,11 +296,9 @@ const deleteCompraFtr = async (id) => {
       }
     }
 
-    // Marcar compra como anulada
     await compra.update({ estado: false }, { transaction });
 
     await transaction.commit();
-
     return true;
 
   } catch (error) {

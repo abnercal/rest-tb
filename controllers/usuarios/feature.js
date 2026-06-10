@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const models = require("../../models/mysql/index");
 const bcrypt = require("bcryptjs");
 const { Op } = require("sequelize");
@@ -25,8 +26,8 @@ const toDTO = (req, usuario) => {
  * Obtener todos los usuarios
  */
 const getUsuariosFtr = async (req, query = {}) => {
-    const { page = 1, limit = 10, search = "" } = query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const search = query.search || "";
+  const hasPagination = query.page !== undefined || query.limit !== undefined;
 
   let where = { estado: 1 };
 
@@ -39,28 +40,32 @@ const getUsuariosFtr = async (req, query = {}) => {
     ];
   }
 
-  const { count, rows } = await models.Usuario.findAndCountAll({
+  let findOptions = {
     where,
     attributes: { exclude: EXCLUDE_FIELDS },
     include: [
       { model: models.Rol, as: "Roles", attributes: ["_id", "nombrerol"] },
       { model: models.Sucursal, as: "Sucursal", attributes: ["idsucursal", "nombre"] },
     ],
-    limit: parseInt(limit),
-    offset,
     order: [["createdAt", "DESC"]],
     distinct: true,
-  });
-
-  return {
-    data: rows.map((u) => toDTO(req, u)),
-    meta: {
-      total: count,
-      totalPages: Math.ceil(count / parseInt(limit)),
-      currentPage: parseInt(page),
-      limit: parseInt(limit),
-    },
   };
+
+  if (hasPagination) {
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 10;
+    findOptions.limit = limit;
+    findOptions.offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Usuario.findAndCountAll(findOptions);
+    return {
+      data: rows.map((u) => toDTO(req, u)),
+      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
+    };
+  }
+
+  const { count, rows } = await models.Usuario.findAndCountAll(findOptions);
+  return { data: rows.map((u) => toDTO(req, u)), meta: { total: count } };
 };
 
 /**
@@ -92,7 +97,14 @@ const createUsuarioFtr = async (req, data, file) => {
   const transaction = await models.sequelize.transaction();
 
   try {
-    const { email, password, roles = [], ...rest } = data;
+    const { email, password, roles = [], username, codigoemp, idsucursal, ...rest } = data;
+
+    // Optional fields: enviar null en vez de string vacío para evitar conflictos con UNIQUE
+    const cleanUsername = username || null;
+    // Si no mandan código empleado, se genera automático: EMP- + 5 aleatorios
+    const cleanCodigoemp = codigoemp || `EMP-${crypto.randomUUID().replace(/-/g, '').slice(0, 5).toUpperCase()}`;
+    // Sucursal: usar la del usuario logueado (req.user) si no se especifica
+    const cleanIdsucursal = idsucursal ?? req.user?.idsucursal;
 
     const imagen = file ? `/usuarios/${file.filename}` : null;
 
@@ -110,7 +122,7 @@ const createUsuarioFtr = async (req, data, file) => {
     const passwordHash = bcrypt.hashSync(password, salt);
 
     const nuevoUsuario = await models.Usuario.create(
-      { ...rest, email, password: passwordHash, imagen },
+      { ...rest, email, username: cleanUsername, codigoemp: cleanCodigoemp, idsucursal: cleanIdsucursal, password: passwordHash, imagen },
       { transaction }
     );
 
@@ -139,6 +151,8 @@ const createUsuarioFtr = async (req, data, file) => {
           ? "El correo ya está registrado"
           : campo === "codigoemp"
           ? "El código de empresa ya existe"
+          : campo === "username"
+          ? "El nombre de usuario ya existe"
           : "Dato duplicado";
       const err = new Error(mensaje);
       err.status = 409;
@@ -166,12 +180,20 @@ const updateUsuarioFtr = async (req, id, data, file) => {
       throw error;
     }
 
-    const { roles, password, ...rest } = data;
+    const { roles, password, username, codigoemp, idsucursal, ...rest } = data;
 
     if (password) {
       const salt = bcrypt.genSaltSync(10);
       rest.password = bcrypt.hashSync(password, salt);
     }
+
+    // Optional fields: enviar null en vez de string vacío
+    if (username !== undefined) rest.username = username || null;
+    // En update, no regenerar código — solo si mandan uno con valor
+    if (codigoemp) rest.codigoemp = codigoemp;
+    // Sucursal: usar la del usuario logueado si no se especifica
+    if (idsucursal !== undefined) rest.idsucursal = idsucursal;
+    else if (!usuario.idsucursal) rest.idsucursal = req.user?.idsucursal;
     
     // Si viene nueva imagen → borrar la anterior y asignar la nueva
     if (file) {

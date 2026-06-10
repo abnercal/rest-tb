@@ -2,7 +2,10 @@ const { Op } = require("sequelize");
 const models = require("../../models/mysql");
 const { deleteImageFile } = require("../../utils/imagen");
 
-const INCLUDE_PRODUCTO = ["Marca", "Presentacion", "Categoria", "Unidad"];
+const INCLUDE_PRODUCTO = [
+  "Marca", "Categoria", "Unidad",
+  { association: "Presentaciones", include: ["Presentacion"] },
+];
 // URL completa de imagen 
 const buildImageUrl = (req, imagePath) => {
   if (!imagePath) return null;
@@ -17,8 +20,8 @@ const toDTO = (req, producto) => {
 };
 
 const getProductosFtr = async (req, query) => {
-  const { page = 1, limit = 20, search = "" } = query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const search = query.search || "";
+  const hasPagination = query.page !== undefined || query.limit !== undefined;
 
   let where = { estado: 1 };
   if (search) {
@@ -28,24 +31,28 @@ const getProductosFtr = async (req, query) => {
     ];
   }
 
-  const { count, rows } = await models.Producto.findAndCountAll({
+  let findOptions = {
     where,
     include: INCLUDE_PRODUCTO,
-    limit: parseInt(limit),
-    offset,
     order: [["nombre", "ASC"]],
     distinct: true,
-  });
-
-  return {
-    data: rows.map((p) => toDTO(req, p)),
-    meta: {
-      total: count,
-      totalPages: Math.ceil(count / parseInt(limit)),
-      currentPage: parseInt(page),
-      limit: parseInt(limit),
-    },
   };
+
+  if (hasPagination) {
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 20;
+    findOptions.limit = limit;
+    findOptions.offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Producto.findAndCountAll(findOptions);
+    return {
+      data: rows.map((p) => toDTO(req, p)),
+      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
+    };
+  }
+
+  const { count, rows } = await models.Producto.findAndCountAll(findOptions);
+  return { data: rows.map((p) => toDTO(req, p)), meta: { total: count } };
 };
 
 const getProductoFtr = async (req, id) => {
@@ -65,14 +72,27 @@ const getProductoFtr = async (req, id) => {
 const createProductoFtr = async (req, body, file) => {
   const transaction = await models.sequelize.transaction();
   try {
+    const { presentaciones, ...productData } = body;
     const imagen = file ? `/productos/${file.filename}` : null;
-    const producto = await models.Producto.create({...body, imagen}, { transaction });
+
+    const producto = await models.Producto.create(
+      { ...productData, imagen },
+      { transaction },
+    );
+
+    // Crear presentaciones asociadas
+    if (presentaciones && presentaciones.length > 0) {
+      const rows = presentaciones.map((p) => ({
+        codigoprod: producto.codigoprod,
+        idpresentacion: p.idpresentacion,
+        cantidad_base: p.cantidad_base ?? 1,
+        precio_venta: p.precio_venta ?? 0,
+        codigo_barras: p.codigo_barras ?? null,
+      }));
+      await models.ProductoPresentacion.bulkCreate(rows, { transaction });
+    }
+
     await transaction.commit();
-    
-    /*return models.Producto.findOne({
-      where: { codigoprod: producto.codigoprod },
-      include: INCLUDE_PRODUCTO,
-    });*/
 
     const creado = await models.Producto.findOne({
       where: { codigoprod: producto.codigoprod },
@@ -82,7 +102,6 @@ const createProductoFtr = async (req, body, file) => {
 
   } catch (error) {
     await transaction.rollback();
-    // Si falló el create pero ya se guardó el archivo, borrarlo
     if (file) deleteImageFile(`/productos/${file.filename}`);
     throw error;
   }
@@ -91,20 +110,33 @@ const createProductoFtr = async (req, body, file) => {
 const updateProductoFtr = async (req, id, body, file) => {
   const transaction = await models.sequelize.transaction();
   try {
-    // Usamos getProductoFtr sin req para obtener el modelo Sequelize puro
+    const { presentaciones, ...productData } = body;
     const producto = await getProductoFtr(null, id);
 
     if (file) {
-      deleteImageFile(producto.imagen);              // borra la vieja del disco
-      body.imagen = `/productos/${file.filename}`;
+      deleteImageFile(producto.imagen);
+      productData.imagen = `/productos/${file.filename}`;
     }
 
-    await producto.update(body, { transaction });
+    await producto.update(productData, { transaction });
+
+    // Reemplazar presentaciones: borrar viejas, crear nuevas
+    if (presentaciones && presentaciones.length > 0) {
+      await models.ProductoPresentacion.destroy({
+        where: { codigoprod: id },
+        transaction,
+      });
+      const rows = presentaciones.map((p) => ({
+        codigoprod: id,
+        idpresentacion: p.idpresentacion,
+        cantidad_base: p.cantidad_base ?? 1,
+        precio_venta: p.precio_venta ?? 0,
+        codigo_barras: p.codigo_barras ?? null,
+      }));
+      await models.ProductoPresentacion.bulkCreate(rows, { transaction });
+    }
+
     await transaction.commit();
-    /*return models.Producto.findOne({
-      where: { codigoprod: id },
-      include: INCLUDE_PRODUCTO,
-    }); */
 
     const actualizado = await models.Producto.findOne({
       where: { codigoprod: id },

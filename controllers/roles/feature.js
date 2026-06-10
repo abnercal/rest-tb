@@ -2,34 +2,38 @@ const { Op } = require("sequelize");
 const models = require("../../models/mysql");
 
 const getRolesFtr = async (query) => {
-  const { page = 1, limit = 20, search = "" } = query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const search = query.search || "";
+  const hasPagination = query.page !== undefined || query.limit !== undefined;
 
   let where = {};
   if (search) {
     where[Op.or] = [{ nombrerol: { [Op.like]: `%${search}%` } }];
   }
 
-  const { count, rows } = await models.Rol.findAndCountAll({
+  let findOptions = {
     where,
     include: [
       { model: models.Permiso, as: "Permisos", attributes: ["_id", "nombre"] },
     ],
-    limit: parseInt(limit),
-    offset,
     order: [["nombrerol", "ASC"]],
     distinct: true,
-  });
-
-  return {
-    data: rows,
-    meta: {
-      total: count,
-      totalPages: Math.ceil(count / parseInt(limit)),
-      currentPage: parseInt(page),
-      limit: parseInt(limit),
-    },
   };
+
+  if (hasPagination) {
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 20;
+    findOptions.limit = limit;
+    findOptions.offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Rol.findAndCountAll(findOptions);
+    return {
+      data: rows,
+      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
+    };
+  }
+
+  const { count, rows } = await models.Rol.findAndCountAll(findOptions);
+  return { data: rows, meta: { total: count } };
 };
 
 const getRolFtr = async (id) => {

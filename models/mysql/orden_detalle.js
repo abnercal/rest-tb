@@ -2,8 +2,6 @@
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
-const Producto = require("./producto");
-const Orden = require("./orden");
 
 const OrdenDetalle = dbConnect.define('OrdenDetalle', {
   _id: {
@@ -30,8 +28,8 @@ const OrdenDetalle = dbConnect.define('OrdenDetalle', {
     type: DataTypes.STRING(36),
     allowNull: false
   },
-  codigoprod: {
-    field:'codigoprod',
+  idprodPresenta: {
+    field:'idprodPresenta',
     type: DataTypes.INTEGER,
     allowNull: false
   }
@@ -40,16 +38,34 @@ const OrdenDetalle = dbConnect.define('OrdenDetalle', {
   timestamps: false,
 });
 
-// Asociaciones
-//OrdenDetalle.belongsTo(Orden, { foreignKey: 'idorden' });
-OrdenDetalle.belongsTo(Producto, { foreignKey: 'codigoprod' });
+OrdenDetalle.associate = (models) => {
+  OrdenDetalle.belongsTo(models.Orden, {
+    foreignKey: 'idorden',
+    as: 'Orden',
+  });
+  OrdenDetalle.belongsTo(models.ProductoPresentacion, {
+    foreignKey: 'idprodPresenta',
+    as: 'ProductoPresentacion',
+  });
+};
 
 OrdenDetalle.findAllData  = function(){
-  return OrdenDetalle.findAll({include:[Orden,Producto]})
-}
+  return OrdenDetalle.findAll({
+    include: [
+      { association: 'Orden' },
+      { association: 'ProductoPresentacion', include: ['Producto', 'Presentacion'] },
+    ],
+  });
+};
 
 OrdenDetalle.findOneData  = function(_id){
-  return OrdenDetalle.findOne({where:{_id},include:[Orden,Producto]})
-}
+  return OrdenDetalle.findOne({
+    where: { _id },
+    include: [
+      { association: 'Orden' },
+      { association: 'ProductoPresentacion', include: ['Producto', 'Presentacion'] },
+    ],
+  });
+};
 
 module.exports = OrdenDetalle;

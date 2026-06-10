@@ -3,11 +3,25 @@ const moment = require("moment");
 const models = require("../../models/mysql");
 
 /**
+ * Helper: include de detalle con presentación
+ */
+const INCLUDE_DETALLE = () => ({
+  model: models.OrdenDetalle,
+  as: "Detalles",
+  include: [
+    {
+      association: "ProductoPresentacion",
+      include: ["Producto", "Presentacion"],
+    },
+  ],
+});
+
+/**
  * Listar órdenes/ventas con paginación y búsqueda
  */
 const getVentasFtr = async (query) => {
-  const { page = 1, limit = 10, search = "" } = query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const search = query.search || "";
+  const hasPagination = query.page !== undefined || query.limit !== undefined;
 
   let where = {};
 
@@ -26,32 +40,32 @@ const getVentasFtr = async (query) => {
     }
   }
 
-  const { count, rows } = await models.Orden.findAndCountAll({
+  let findOptions = {
     where,
     include: [
       { model: models.Cliente, as: "Cliente" },
-      {
-        model: models.OrdenDetalle,
-        as: "Detalles",
-        include: [{ model: models.Producto }],
-      },
+      INCLUDE_DETALLE(),
     ],
-    limit: parseInt(limit),
-    offset,
     order: [["createdAt", "DESC"]],
     distinct: true,
     subQuery: false,
-  });
-
-  return {
-    data: rows,
-    meta: {
-      total: count,
-      totalPages: Math.ceil(count / parseInt(limit)),
-      currentPage: parseInt(page),
-      limit: parseInt(limit),
-    },
   };
+
+  if (hasPagination) {
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 10;
+    findOptions.limit = limit;
+    findOptions.offset = (page - 1) * limit;
+
+    const { count, rows } = await models.Orden.findAndCountAll(findOptions);
+    return {
+      data: rows,
+      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
+    };
+  }
+
+  const { count, rows } = await models.Orden.findAndCountAll(findOptions);
+  return { data: rows, meta: { total: count } };
 };
 
 /**
@@ -62,11 +76,7 @@ const getVentaFtr = async (id) => {
     where: { _id: id },
     include: [
       { model: models.Cliente, as: "Cliente" },
-      {
-        model: models.OrdenDetalle,
-        as: "Detalles",
-        include: [{ model: models.Producto, as: "Producto" }],
-      },
+      INCLUDE_DETALLE(),
       { model: models.Pago, as: "Pago" },
     ],
   });
@@ -84,7 +94,7 @@ const getVentaFtr = async (id) => {
  * Body esperado:
  * {
  *   nombre, fecha, direccion, idcliente, idusuario, idsucursal,
- *   detalles: [{ codigoprod, cantidad, precio }],
+ *   detalles: [{ idprodPresenta, cantidad, precio }],
  *   pago: { idtipopago, estado }
  * }
  */
@@ -104,29 +114,31 @@ const createVentaFtr = async (body) => {
 
     let total = 0;
 
-    // Validar productos y stock
+    // Validar presentaciones y stock
     for (const detalle of detalles) {
-      const producto = await models.Producto.findOne({
-        where: { codigoprod: detalle.codigoprod },
+      const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
+        include: ["Producto"],
         transaction,
       });
 
-      if (!producto) {
-        const error = new Error(`Producto ${detalle.codigoprod} no existe`);
+      if (!pp) {
+        const error = new Error(`Presentación ${detalle.idprodPresenta} no existe`);
         error.status = 404;
         throw error;
       }
 
+      const unidadesADescontar = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
       const almacen = await models.Almacen.findOne({
         where: {
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: ordenData.idsucursal,
         },
         transaction,
       });
 
-      if (!almacen || Number(almacen.stock) < Number(detalle.cantidad)) {
-        const error = new Error(`Stock insuficiente para: ${producto.nombre}`);
+      if (!almacen || Number(almacen.stock) < unidadesADescontar) {
+        const error = new Error(`Stock insuficiente para: ${pp.Producto?.nombre}`);
         error.status = 409;
         throw error;
       }
@@ -141,33 +153,40 @@ const createVentaFtr = async (body) => {
         ...ordenData,
         total,
         fecha: new Date(),
-        idestado: ESTADO_CREADO
+        idestado: ESTADO_CREADO,
       },
       { transaction }
     );
 
     // Crear detalles + actualizar stock + kardex
     for (const detalle of detalles) {
+      const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
+        include: ["Producto"],
+        transaction,
+      });
+
       await models.OrdenDetalle.create(
         {
           cantidad: detalle.cantidad,
           precio: detalle.precio,
           idorden: nuevaOrden._id,
-          codigoprod: detalle.codigoprod,
+          idprodPresenta: detalle.idprodPresenta,
         },
         { transaction }
       );
 
+      const unidadesADescontar = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
       const almacen = await models.Almacen.findOne({
         where: {
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: ordenData.idsucursal,
         },
         transaction,
       });
 
       const stockAnterior = Number(almacen.stock);
-      const stockNuevo = stockAnterior - Number(detalle.cantidad);
+      const stockNuevo = stockAnterior - unidadesADescontar;
 
       almacen.stock = stockNuevo;
       await almacen.save({ transaction });
@@ -175,11 +194,11 @@ const createVentaFtr = async (body) => {
       // KARDEX (SALIDA)
       await models.Kardex.create(
         {
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: ordenData.idsucursal,
           idusuario: ordenData.idusuario,
           tipo: "VENTA",
-          cantidad: detalle.cantidad,
+          cantidad: unidadesADescontar,
           stock_anterior: stockAnterior,
           stock_nuevo: stockNuevo,
           referencia: nuevaOrden._id,
@@ -195,7 +214,7 @@ const createVentaFtr = async (body) => {
         estado: pago.estado || "Pendiente",
         importe: total,
         idorden: nuevaOrden._id,
-        idtipopago: 3 || null,
+        idtipopago: pago.idtipopago || 3,
         fecha_pago: new Date(),
       },
       { transaction }
@@ -233,7 +252,7 @@ const updateVentaFtr = async (id, body) => {
 };
 
 /**
- * Soft delete: estado = 0
+ * Anular venta: reversa de stock
  */
 const deleteVentaFtr = async (id) => {
   const transaction = await models.sequelize.transaction();
@@ -242,7 +261,6 @@ const deleteVentaFtr = async (id) => {
     const orden = await models.Orden.findByPk(id);
     if (!orden) throw new Error("Venta no encontrada");
 
-    // VALIDAR SI YA ESTÁ ANULADA
     if (orden.idestado === 3) {
       throw new Error("La venta ya está anulada");
     }
@@ -253,16 +271,22 @@ const deleteVentaFtr = async (id) => {
     });
 
     for (const detalle of detalles) {
+      const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
+        transaction,
+      });
+
+      const unidadesARevertir = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
       const almacen = await models.Almacen.findOne({
         where: {
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: orden.idsucursal,
         },
         transaction,
       });
 
       const stockAnterior = Number(almacen.stock);
-      const stockNuevo = stockAnterior + Number(detalle.cantidad);
+      const stockNuevo = stockAnterior + unidadesARevertir;
 
       almacen.stock = stockNuevo;
       await almacen.save({ transaction });
@@ -270,11 +294,11 @@ const deleteVentaFtr = async (id) => {
       // KARDEX REVERSA
       await models.Kardex.create(
         {
-          codigoprod: detalle.codigoprod,
+          codigoprod: pp.codigoprod,
           idsucursal: orden.idsucursal,
           idusuario: orden.idusuario,
           tipo: "ANULACION_VENTA",
-          cantidad: detalle.cantidad,
+          cantidad: unidadesARevertir,
           stock_anterior: stockAnterior,
           stock_nuevo: stockNuevo,
           referencia: id,
@@ -284,7 +308,6 @@ const deleteVentaFtr = async (id) => {
       );
     }
 
-    // AQUÍ EL CAMBIO IMPORTANTE
     await orden.update({ idestado: 3 }, { transaction });
 
     await transaction.commit();
