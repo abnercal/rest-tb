@@ -121,20 +121,48 @@ const updateProductoFtr = async (req, id, body, file) => {
 
     await producto.update(productData, { transaction });
 
-    // Reemplazar presentaciones: borrar viejas, crear nuevas
+    // Actualizar presentaciones: modificar existentes, crear nuevas, soft-delete las removidas
     if (presentaciones && presentaciones.length > 0) {
-      await models.ProductoPresentacion.destroy({
+      const existentes = await models.ProductoPresentacion.findAll({
         where: { codigoprod: id },
         transaction,
       });
-      const rows = presentaciones.map((p) => ({
-        codigoprod: id,
-        idpresentacion: p.idpresentacion,
-        cantidad_base: p.cantidad_base ?? 1,
-        precio_venta: p.precio_venta ?? 0,
-        codigo_barras: p.codigo_barras ?? null,
-      }));
-      await models.ProductoPresentacion.bulkCreate(rows, { transaction });
+
+      const idsEntrantes = presentaciones.map((p) => p.idpresentacion);
+
+      // Soft-delete las que ya no están
+      for (const ex of existentes) {
+        if (!idsEntrantes.includes(ex.idpresentacion)) {
+          await ex.update({ estado: 0 }, { transaction });
+        }
+      }
+
+      // Crear o actualizar
+      for (const p of presentaciones) {
+        const existente = existentes.find((ex) => ex.idpresentacion === p.idpresentacion);
+        if (existente) {
+          await existente.update(
+            {
+              cantidad_base: p.cantidad_base ?? 1,
+              precio_venta: p.precio_venta ?? 0,
+              codigo_barras: p.codigo_barras ?? null,
+              estado: 1,
+            },
+            { transaction },
+          );
+        } else {
+          await models.ProductoPresentacion.create(
+            {
+              codigoprod: id,
+              idpresentacion: p.idpresentacion,
+              cantidad_base: p.cantidad_base ?? 1,
+              precio_venta: p.precio_venta ?? 0,
+              codigo_barras: p.codigo_barras ?? null,
+            },
+            { transaction },
+          );
+        }
+      }
     }
 
     await transaction.commit();
