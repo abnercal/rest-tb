@@ -3,3 +3,7 @@ node_modules/
 package-lock.json
 logs/
 public/productos/
+
+# AI tooling artifacts
+.atl/
+/openspec/
