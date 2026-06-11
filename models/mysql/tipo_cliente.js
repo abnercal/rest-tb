@@ -27,4 +27,11 @@ const TipoCliente = dbConnect.define('TipoCliente', {
   timestamps: false,
 });
 
+TipoCliente.associate = (models) => {
+  TipoCliente.hasMany(models.Precio, {
+    foreignKey: 'idtipoCli',
+    as: 'Precios',
+  });
+};
+
 module.exports = TipoCliente;

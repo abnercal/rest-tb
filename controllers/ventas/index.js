@@ -46,10 +46,20 @@ const deleteVentaCtrl = async (req, res) => {
   }
 };
 
+const nextCodeCtrl = async (req, res) => {
+  try {
+    const result = await feature.nextCodeFtr();
+    return successResponse(res, "Siguiente código", result);
+  } catch (error) {
+    return errorResponse(res, error, "Error al generar código");
+  }
+};
+
 module.exports = {
   getVentasCtrl,
   getVentaCtrl,
   createVentaCtrl,
   updateVentaCtrl,
   deleteVentaCtrl,
+  nextCodeCtrl,
 };

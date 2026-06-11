@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const moment = require("moment");
 const models = require("../../models/mysql");
+const { obtenerPrecioCorrecto } = require("../../helpers/precio-helper");
 
 /**
  * Helper: include de detalle con presentación
@@ -104,6 +105,12 @@ const createVentaFtr = async (body) => {
   try {
     const { detalles = [], pago = {}, ...ordenData } = body;
 
+    // Auto-generar código si no se envió nombre
+    if (!ordenData.nombre) {
+      const { generarSiguienteCodigo } = require("../../helpers/generate-code");
+      ordenData.nombre = await generarSiguienteCodigo("VENTA");
+    }
+
     // Validar cliente
     const cliente = await models.Cliente.findByPk(ordenData.idcliente, { transaction });
     if (!cliente) {
@@ -144,6 +151,48 @@ const createVentaFtr = async (body) => {
       }
 
       total += Number(detalle.cantidad) * Number(detalle.precio);
+    }
+
+    // Resolver tipo de cliente para validación de precios
+    let idtipoCli = null;
+    if (body.idcliente) {
+      const cliente = await models.Cliente.findByPk(body.idcliente, { transaction });
+      if (cliente) {
+        idtipoCli = cliente.idtipoCli;
+      }
+    }
+
+    // Validar precios de cada detalle contra el precio correcto
+    const erroresPrecio = [];
+    for (const detalle of detalles) {
+      try {
+        const precioCorrecto = await obtenerPrecioCorrecto(detalle.idprodPresenta, idtipoCli);
+        if (Math.abs(Number(detalle.precio) - Number(precioCorrecto.precio)) > 0.01) {
+          erroresPrecio.push({
+            idprodPresenta: detalle.idprodPresenta,
+            esperado: Number(precioCorrecto.precio),
+            recibido: Number(detalle.precio),
+          });
+        }
+      } catch (err) {
+        if (err.code === "PRECIO_NO_DISPONIBLE") {
+          erroresPrecio.push({
+            idprodPresenta: detalle.idprodPresenta,
+            error: "PRECIO_NO_DISPONIBLE",
+            mensaje: "Producto sin precio disponible para esta presentación",
+          });
+        } else {
+          throw err; // error inesperado, dejar que el catch de afuera lo maneje
+        }
+      }
+    }
+
+    if (erroresPrecio.length > 0) {
+      const err = new Error("Precios incorrectos en la venta");
+      err.status = 409;
+      err.code = "PRECIO_INCORRECTO";
+      err.detalles = erroresPrecio;
+      throw err;
     }
 
     // Crear venta
@@ -319,10 +368,19 @@ const deleteVentaFtr = async (id) => {
   }
 };
 
+/**
+ * Obtener el siguiente código de venta disponible
+ */
+const nextCodeFtr = async () => {
+  const { generarSiguienteCodigo } = require("../../helpers/generate-code");
+  return { codigo: await generarSiguienteCodigo("VENTA") };
+};
+
 module.exports = {
   getVentasFtr,
   getVentaFtr,
   createVentaFtr,
   updateVentaFtr,
   deleteVentaFtr,
+  nextCodeFtr,
 };

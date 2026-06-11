@@ -76,11 +76,18 @@ const errorResponse = (reqOrRes, resOrError, errorOrMessage, messageOrCode = nul
       ? error?.message || message
       : message;
 
+  // Incluir propiedades adicionales del error si existen (code, detalles, etc.)
+  const extra = {};
+  if (error?.code)       extra.code    = error.code;
+  if (error?.detalles)   extra.detalles = error.detalles;
+  if (error?.errors)     extra.errors   = error.errors;
+
   return res.status(status).json({
     ok: false,
     message: finalMessage,
     data:    null,
     meta:    null,
+    ...extra,
     ...(process.env.NODE_ENV === "development" && {
       error: error?.message || String(error),
     }),

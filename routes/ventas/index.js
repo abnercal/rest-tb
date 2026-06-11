@@ -6,6 +6,7 @@ const { createVentaValidator, updateVentaValidator } = require("../../middleware
 const router = Router();
 
 router.get("/",             verifyJWT, checkPermiso("ventas:read"),                            ctrl.getVentasCtrl);
+router.get("/next-code",    verifyJWT, checkPermiso("ventas:create"),                          ctrl.nextCodeCtrl);
 router.get("/:id",          verifyJWT, checkPermiso("ventas:read"),                            ctrl.getVentaCtrl);
 router.post("/",            verifyJWT, checkPermiso("ventas:create"), createVentaValidator,    ctrl.createVentaCtrl);
 router.put("/:id",          verifyJWT, checkPermiso("ventas:update"), updateVentaValidator,    ctrl.updateVentaCtrl);

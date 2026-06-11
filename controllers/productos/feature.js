@@ -28,6 +28,7 @@ const getProductosFtr = async (req, query) => {
     where[Op.or] = [
       { nombre: { [Op.like]: `%${search}%` } },
       { descripcion: { [Op.like]: `%${search}%` } },
+      { '$Presentaciones.codigo_barras$': { [Op.like]: `%${search}%` } },
     ];
   }
 

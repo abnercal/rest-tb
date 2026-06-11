@@ -48,11 +48,21 @@ const deleteCompraCtrl = async (req, res) => {
   }
 };
 
+const nextCodeCtrl = async (req, res) => {
+  try {
+    const result = await feature.nextCodeFtr();
+    return successResponse(res, "Siguiente código", result);
+  } catch (error) {
+    return errorResponse(res, error, "Error al generar código");
+  }
+};
+
 module.exports = {
   getComprasCtrl,
   getCompraCtrl,
   createCompraCtrl,
   updateCompraCtrl,
   deleteCompraCtrl,
+  nextCodeCtrl,
 };
 

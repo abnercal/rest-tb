@@ -101,6 +101,12 @@ const createCompraFtr = async (body) => {
   try {
     const { detalles = [], ...compraData } = body;
 
+    // Auto-generar código si no se envió nombre
+    if (!compraData.nombre) {
+      const { generarSiguienteCodigo } = require("../../helpers/generate-code");
+      compraData.nombre = await generarSiguienteCodigo("COMPRA");
+    }
+
     // ✅ VALIDACIONES
     if (!compraData.idsucursal) {
       throw new Error("La compra debe tener una sucursal");
@@ -307,10 +313,19 @@ const deleteCompraFtr = async (id) => {
   }
 };
 
+/**
+ * Obtener el siguiente código de compra disponible
+ */
+const nextCodeFtr = async () => {
+  const { generarSiguienteCodigo } = require("../../helpers/generate-code");
+  return { codigo: await generarSiguienteCodigo("COMPRA") };
+};
+
 module.exports = {
   getComprasFtr,
   getCompraFtr,
   createCompraFtr,
   updateCompraFtr,
   deleteCompraFtr,
+  nextCodeFtr,
 };

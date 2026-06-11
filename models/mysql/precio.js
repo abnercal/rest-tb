@@ -44,13 +44,17 @@ const Precio = dbConnect.define('Precio', {
   }
 }, {
   tableName: 'precios',
-  timestamps: false,
+  timestamps: true,
 });
 
 Precio.associate = (models) => {
   Precio.belongsTo(models.ProductoPresentacion, {
     foreignKey: 'idprodPresenta',
     as: 'ProductoPresentacion',
+  });
+  Precio.belongsTo(models.TipoCliente, {
+    foreignKey: 'idtipoCli',
+    as: 'TipoCliente',
   });
 };
 

@@ -1,8 +1,2 @@
-const runSeed = require("./seed");
-
-runSeed()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+// Seed unificado — limpia todo y vuelve a sembrar
+require("./seed");
