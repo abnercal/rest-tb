@@ -181,6 +181,8 @@ async function runSeed() {
     const catGen = await db.Categoria.create({ nombre: "Genérico", estado: 1 }, { transaction });
     const marGen = await db.Marca.create({ nombre: "Genérico", estado: 1 }, { transaction });
     const preGen = await db.Presentacion.create({ nombre: "Genérico", estado: 1 }, { transaction });
+    const preUnidad = await db.Presentacion.create({ nombre: "Unidad", estado: 1 }, { transaction });
+    const preCaja = await db.Presentacion.create({ nombre: "Caja", estado: 1 }, { transaction });
     const undGen = await db.UnidadMed.create({ nombre: "Unidad", abreviatura: "UND", estado: 1 }, { transaction });
 
     await db.TipoPago.bulkCreate(
@@ -218,14 +220,14 @@ async function runSeed() {
 
     const prodGen = await db.Producto.create(
       { nombre: "Producto Genérico", descripcion: "Producto Genérico", imagen: null,
-        idmarca: marGen._id, idpresentacion: preGen._id, idcategoria: catGen._id,
-        idunidad: undGen._id, estado: 1, precio: 0 },
+        idmarca: marGen._id, idcategoria: catGen._id,
+        idunidad: undGen._id, estado: 1 },
       { transaction }
     );
 
     // ── 8. PRESENTACIONES DE EJEMPLO + PRECIOS MAYORISTA ──
     const pres1 = await db.ProductoPresentacion.create({
-      codigoprod: prodGen._id,
+      codigoprod: prodGen.codigoprod,
       idpresentacion: preGen._id,
       cantidad_base: 1,
       precio_venta: 100.00,
@@ -234,8 +236,8 @@ async function runSeed() {
     }, { transaction });
 
     const pres2 = await db.ProductoPresentacion.create({
-      codigoprod: prodGen._id,
-      idpresentacion: preGen._id,
+      codigoprod: prodGen.codigoprod,
+      idpresentacion: preUnidad._id,
       cantidad_base: 1,
       precio_venta: 200.00,
       codigo_barras: "7501000000028",
@@ -243,9 +245,9 @@ async function runSeed() {
     }, { transaction });
 
     const pres3 = await db.ProductoPresentacion.create({
-      codigoprod: prodGen._id,
-      idpresentacion: preGen._id,
-      cantidad_base: 1,
+      codigoprod: prodGen.codigoprod,
+      idpresentacion: preCaja._id,
+      cantidad_base: 12,
       precio_venta: 50.00,
       codigo_barras: "7501000000035",
       estado: 1,
