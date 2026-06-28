@@ -61,10 +61,10 @@ Almacen.associate = (models) => {
 }
 
 Almacen.findAllData  = function(){
-  return Almacen.findAll({include:[Sucursal,Producto]})
+  return Almacen.findAll({include:['Sucursal','Producto']})
 }
 
 Almacen.findOneData  = function(_id){
-  return Almacen.findOne({where:{_id},include:[Sucursal,Producto]})
+  return Almacen.findOne({where:{_id},include:['Sucursal','Producto']})
 }
 module.exports = Almacen;

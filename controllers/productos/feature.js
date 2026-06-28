@@ -76,6 +76,20 @@ const createProductoFtr = async (req, body, file) => {
     const { presentaciones, ...productData } = body;
     const imagen = file ? `/productos/${file.filename}` : null;
 
+    // Validar que las FKs existan
+    if (productData.idmarca) {
+      const marca = await models.Marca.findByPk(productData.idmarca, { transaction });
+      if (!marca) { const err = new Error("La marca no existe"); err.status = 404; throw err; }
+    }
+    if (productData.idcategoria) {
+      const cat = await models.Categoria.findByPk(productData.idcategoria, { transaction });
+      if (!cat) { const err = new Error("La categoría no existe"); err.status = 404; throw err; }
+    }
+    if (productData.idunidad) {
+      const und = await models.UnidadMed.findByPk(productData.idunidad, { transaction });
+      if (!und) { const err = new Error("La unidad de medida no existe"); err.status = 404; throw err; }
+    }
+
     const producto = await models.Producto.create(
       { ...productData, imagen },
       { transaction },
