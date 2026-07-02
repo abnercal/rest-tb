@@ -155,15 +155,11 @@ const updateProductoFtr = async (req, id, body, file) => {
       for (const p of presentaciones) {
         const existente = existentes.find((ex) => ex.idpresentacion === p.idpresentacion);
         if (existente) {
-          await existente.update(
-            {
-              cantidad_base: p.cantidad_base ?? 1,
-              precio_venta: p.precio_venta ?? 0,
-              codigo_barras: p.codigo_barras ?? null,
-              estado: 1,
-            },
-            { transaction },
-          );
+          const updateData = { estado: 1 };
+          if (p.cantidad_base !== undefined) updateData.cantidad_base = p.cantidad_base;
+          if (p.precio_venta !== undefined) updateData.precio_venta = p.precio_venta;
+          if (p.codigo_barras !== undefined) updateData.codigo_barras = p.codigo_barras;
+          await existente.update(updateData, { transaction });
         } else {
           await models.ProductoPresentacion.create(
             {

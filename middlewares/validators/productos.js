@@ -39,6 +39,18 @@ const createProductoValidator = [
     .isFloat({ min: 0 })
     .withMessage("La cantidad base debe ser un número positivo"),
 
+  body("presentaciones")
+    .if(body("presentaciones").exists())
+    .custom((value) => {
+      const ids = value.map(p => p.idpresentacion);
+      const duplicados = ids.filter((id, index) => ids.indexOf(id) !== index);
+      if (duplicados.length > 0) {
+        const repetidos = [...new Set(duplicados)].join(", ");
+        throw new Error(`No se permiten presentaciones duplicadas. IDs repetidos: ${repetidos}`);
+      }
+      return true;
+    }),
+
   validateResults,
 ];
 
@@ -72,6 +84,18 @@ const updateProductoValidator = [
     .if(body("presentaciones").exists())
     .isInt()
     .withMessage("Cada presentación debe tener un ID válido"),
+
+  body("presentaciones")
+    .if(body("presentaciones").exists())
+    .custom((value) => {
+      const ids = value.map(p => p.idpresentacion);
+      const duplicados = ids.filter((id, index) => ids.indexOf(id) !== index);
+      if (duplicados.length > 0) {
+        const repetidos = [...new Set(duplicados)].join(", ");
+        throw new Error(`No se permiten presentaciones duplicadas. IDs repetidos: ${repetidos}`);
+      }
+      return true;
+    }),
 
   validateResults,
 ];
