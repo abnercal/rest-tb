@@ -25,6 +25,12 @@ const createProductoValidator = [
 
   body("presentaciones")
     .optional()
+    .customSanitizer((value) => {
+      if (typeof value === "string") {
+        try { return JSON.parse(value); } catch { return value; }
+      }
+      return value;
+    })
     .isArray()
     .withMessage("Las presentaciones deben ser un arreglo"),
 
@@ -77,6 +83,12 @@ const updateProductoValidator = [
 
   body("presentaciones")
     .optional()
+    .customSanitizer((value) => {
+      if (typeof value === "string") {
+        try { return JSON.parse(value); } catch { return value; }
+      }
+      return value;
+    })
     .isArray()
     .withMessage("Las presentaciones deben ser un arreglo"),
 

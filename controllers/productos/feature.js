@@ -4,7 +4,7 @@ const { deleteImageFile } = require("../../utils/imagen");
 
 const INCLUDE_PRODUCTO = [
   "Marca", "Categoria", "Unidad",
-  { association: "Presentaciones", include: ["Presentacion"] },
+  { association: "Presentaciones", where: { estado: 1 }, required: false, include: ["Presentacion"] },
 ];
 // URL completa de imagen 
 const buildImageUrl = (req, imagePath) => {

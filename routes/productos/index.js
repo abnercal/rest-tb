@@ -6,10 +6,10 @@ const { createProductoValidator, updateProductoValidator } = require("../../midd
 
 const router = Router();
 
-router.get("/",       verifyJWT, checkPermiso("productos:read"),                                ctrl.getProductosCtrl);
-router.get("/:id",    verifyJWT, checkPermiso("productos:read"),                                ctrl.getProductoCtrl);
-router.post("/",      verifyJWT, checkPermiso("productos:create"), createProductoValidator,     upload("productos", "imagen"), handleUploadError, ctrl.createProductoCtrl);
-router.put("/:id",    verifyJWT, checkPermiso("productos:update"), updateProductoValidator,     upload("productos", "imagen"), handleUploadError, ctrl.updateProductoCtrl);
+router.get("/",      verifyJWT, checkPermiso("productos:read"),                                ctrl.getProductosCtrl);
+router.get("/:id",   verifyJWT, checkPermiso("productos:read"),                                ctrl.getProductoCtrl);
+router.post("/",     verifyJWT, checkPermiso("productos:create"), upload("productos", "imagen"), handleUploadError, createProductoValidator, ctrl.createProductoCtrl);
+router.put("/:id",   verifyJWT, checkPermiso("productos:update"), upload("productos", "imagen"), handleUploadError, updateProductoValidator, ctrl.updateProductoCtrl);
 router.delete("/:id", verifyJWT, checkPermiso("productos:delete"),                              ctrl.deleteProductoCtrl);
 
 module.exports = router;
