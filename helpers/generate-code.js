@@ -30,7 +30,7 @@ async function generarSiguienteCodigo(tipo) {
 
   // Buscar el último código generado hoy
   const model = tipo === "VENTA" ? models.Orden : models.Compra;
-  const columna = "nombre";
+  const columna = tipo === "VENTA" ? "referencia" : "nombre";
 
   const ultimo = await model.findOne({
     where: {

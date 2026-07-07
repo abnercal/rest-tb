@@ -48,7 +48,12 @@ const Orden = dbConnect.define('Orden', {
     field: 'idsucursal',
     type: DataTypes.INTEGER,
     allowNull: true
-  }
+  },
+  referencia: {
+    field: "referencia",
+    type: DataTypes.STRING(100),
+    allowNull: false
+  },
 }, {
   tableName: 'orden',
   timestamps: true,

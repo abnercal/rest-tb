@@ -105,10 +105,10 @@ const createVentaFtr = async (body) => {
   try {
     const { detalles = [], pago = {}, ...ordenData } = body;
 
-    // Auto-generar código si no se envió nombre
-    if (!ordenData.nombre) {
+    // Auto-generar referencia si no se envió
+    if (!ordenData.referencia) {
       const { generarSiguienteCodigo } = require("../../helpers/generate-code");
-      ordenData.nombre = await generarSiguienteCodigo("VENTA");
+      ordenData.referencia = await generarSiguienteCodigo("VENTA");
     }
 
     // Validar cliente
