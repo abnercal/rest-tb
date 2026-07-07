@@ -147,6 +147,13 @@ const createVentaFtr = async (body) => {
       if (!almacen || Number(almacen.stock) < unidadesADescontar) {
         const error = new Error(`Stock insuficiente para: ${pp.Producto?.nombre}`);
         error.status = 409;
+        error.code = "STOCK_INSUFICIENTE";
+        error.detalles = [{
+          idprodPresenta: detalle.idprodPresenta,
+          producto: pp.Producto?.nombre,
+          stockActual: Number(almacen?.stock || 0),
+          requerido: unidadesADescontar
+        }];
         throw error;
       }
 
@@ -201,7 +208,7 @@ const createVentaFtr = async (body) => {
       {
         ...ordenData,
         total,
-        fecha: new Date(),
+        fecha: ordenData.fecha || moment().format('YYYY-MM-DD HH:mm:ss'),
         idestado: ESTADO_CREADO,
       },
       { transaction }
@@ -251,7 +258,7 @@ const createVentaFtr = async (body) => {
           stock_anterior: stockAnterior,
           stock_nuevo: stockNuevo,
           referencia: nuevaOrden._id,
-          fecha: new Date(),
+          fecha: nuevaOrden.fecha,
         },
         { transaction }
       );
@@ -351,7 +358,7 @@ const deleteVentaFtr = async (id) => {
           stock_anterior: stockAnterior,
           stock_nuevo: stockNuevo,
           referencia: id,
-          fecha: new Date(),
+          fecha: orden.fecha,
         },
         { transaction }
       );

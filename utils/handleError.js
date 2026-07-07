@@ -71,10 +71,7 @@ const errorResponse = (reqOrRes, resOrError, errorOrMessage, messageOrCode = nul
     console.error(`[${status}] ${req?.method || ""} ${req?.originalUrl || ""}`, error);
   }
 
-  const finalMessage =
-    process.env.NODE_ENV === "development"
-      ? error?.message || message
-      : message;
+  const finalMessage = error?.message || message;
 
   // Incluir propiedades adicionales del error si existen (code, detalles, etc.)
   const extra = {};
