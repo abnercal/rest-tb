@@ -27,6 +27,8 @@ class Server {
             reportes: '/api/reportes',
             modulos: '/api/modulos',
             precios: '/api/precios',
+            lotes: '/api/lotes',
+            descuentos: '/api/descuentos',
         }
 
         //Conectar a base de datos
@@ -75,6 +77,8 @@ class Server {
         this.app.use(this.paths.reportes, require('../routes/reportes'))
         this.app.use(this.paths.modulos, require('../routes/modulos'))
         this.app.use(this.paths.precios, require('../routes/precios'))
+        this.app.use(this.paths.lotes, require('../routes/lotes'))
+        this.app.use(this.paths.descuentos, require('../routes/descuentos'))
         this.app.use('*',(req,res) => {
             res.status(404).json({
                 errors: {

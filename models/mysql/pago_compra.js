@@ -1,11 +1,11 @@
-// models/pago.js
+// models/pago_compra.js
 
 const { dbConnect } = require("../../config/db/connection");
 const { DataTypes } = require("sequelize");
 
-const Pago = dbConnect.define('Pago', {
-  idpagos: {
-    field: "idpagos",
+const PagoCompra = dbConnect.define('PagoCompra', {
+  idpagos_compra: {
+    field: "idpagos_compra",
     type: DataTypes.INTEGER,
     primaryKey: true,
     allowNull: false,
@@ -23,28 +23,35 @@ const Pago = dbConnect.define('Pago', {
     allowNull: true,
     defaultValue: 0
   },
-  idorden: {
-    field: "idorden",
-    type: DataTypes.STRING(36),
+  fecha_pago: {
+    field: "fecha_pago",
+    type: DataTypes.DATEONLY,
     allowNull: true
+  },
+  idcompra: {
+    field: "idcompra",
+    type: DataTypes.STRING(36),
+    allowNull: false
   },
   idtipopago: {
     field: "idtipopago",
     type: DataTypes.INTEGER,
-    allowNull: true
-  },
-  fecha_pago: {
-    field: "fecha_pago",
-    type: DataTypes.DATE, 
-    allowNull: true
+    allowNull: false
   }
 }, {
-  tableName: 'pagos', // Nombre de la tabla en la base de datos
+  tableName: 'pagos_compra', // Nombre de la tabla en la base de datos
   timestamps: false, // Si no tienes columnas de marcas de tiempo (createdAt y updatedAt)
 });
 
-Pago.associate = (models) => {
-  Pago.belongsTo(models.Orden, { foreignKey: 'idorden' });
+PagoCompra.associate = (models) => {
+  PagoCompra.belongsTo(models.Compra, {
+    foreignKey: 'idcompra',
+    as: 'Compra'
+  });
+  PagoCompra.belongsTo(models.TipoPago, {
+    foreignKey: 'idtipopago',
+    as: 'TipoPago'
+  });
 };
 
-module.exports = Pago;
+module.exports = PagoCompra;

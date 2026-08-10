@@ -44,6 +44,14 @@ const Kardex = dbConnect.define('Kardex', {
   fecha: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
+  },
+  idlote: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
+  idprodPresenta: {
+    type: DataTypes.INTEGER,
+    allowNull: false
   }
 }, {
   tableName: 'kardex',
@@ -65,6 +73,16 @@ Kardex.associate = (models) => {
     foreignKey: 'idusuario',
     as: 'Usuario'
   })
+
+    Kardex.belongsTo(models.Lote, {
+        foreignKey: 'idlote',
+        as: 'Lote'
+    });
+
+    Kardex.belongsTo(models.ProductoPresentacion, {
+        foreignKey: 'idprodPresenta',
+        as: 'ProductoPresentacion'
+    });
 
 };
 

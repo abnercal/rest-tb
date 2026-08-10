@@ -2,8 +2,11 @@ const { body } = require("express-validator");
 const validateResults = require("../../utils/validateResults");
 
 const createVentaValidator = [
+  // Opcional: si se omite, createVentaFtr usa el cliente genérico "Consumidor
+  // Final" (nit "CF") — ver controllers/ventas/feature.js. Antes exigía el
+  // campo y rechazaba con 400 cualquier venta de mostrador.
   body("idcliente")
-    .notEmpty().withMessage("El cliente es obligatorio")
+    .optional({ nullable: true })
     .isInt().withMessage("El cliente debe ser un ID numérico"),
 
   body("idusuario")

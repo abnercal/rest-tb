@@ -1,0 +1,316 @@
+{
+  "info": {
+    "name": "REST-MITB - Ventas y Compras",
+    "description": "Colección para probar el flujo de Ventas y Compras.\n\nAutenticación vía JWT. El token se setea automáticamente en la variable `token` al hacer login.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api"
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.token) {",
+                  "  pm.collectionVariables.set('token', json.token);",
+                  "  console.log('Token guardado');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@mail.com\",\n  \"password\": \"123456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📦 Ventas",
+      "item": [
+        {
+          "name": "Obtener siguiente código",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ventas/next-code",
+              "host": ["{{baseUrl}}"],
+              "path": ["ventas", "next-code"]
+            }
+          }
+        },
+        {
+          "name": "Listar ventas",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ventas?page=1&limit=10&search=",
+              "host": ["{{baseUrl}}"],
+              "path": ["ventas"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "search", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Crear venta",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idcliente\": 1,\n  \"idusuario\": 1,\n  \"idsucursal\": 1,\n  \"detalles\": [\n    {\n      \"idprodPresenta\": 1,\n      \"cantidad\": 2,\n      \"precio\": 25.50\n    },\n    {\n      \"idprodPresenta\": 2,\n      \"cantidad\": 1,\n      \"precio\": 45.00\n    }\n  ],\n  \"pago\": {\n    \"idtipopago\": 1,\n    \"estado\": \"Pagado\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ventas",
+              "host": ["{{baseUrl}}"],
+              "path": ["ventas"]
+            }
+          }
+        },
+        {
+          "name": "Obtener venta por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ventas/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["ventas", "1"]
+            }
+          }
+        },
+        {
+          "name": "Anular venta",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ventas/anular/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["ventas", "anular", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📦 Compras",
+      "item": [
+        {
+          "name": "Obtener siguiente código",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/compras/next-code",
+              "host": ["{{baseUrl}}"],
+              "path": ["compras", "next-code"]
+            }
+          }
+        },
+        {
+          "name": "Listar compras",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/compras?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["compras"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Crear compra",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idproveedor\": 1,\n  \"idusuario\": 1,\n  \"idsucursal\": 1,\n  \"detalles\": [\n    {\n      \"idprodPresenta\": 1,\n      \"cantidad\": 10,\n      \"costo\": 15.00\n    },\n    {\n      \"idprodPresenta\": 2,\n      \"cantidad\": 5,\n      \"costo\": 30.00\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/compras",
+              "host": ["{{baseUrl}}"],
+              "path": ["compras"]
+            }
+          }
+        },
+        {
+          "name": "Obtener compra por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/compras/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["compras", "1"]
+            }
+          }
+        },
+        {
+          "name": "Anular compra",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/compras/anular/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["compras", "anular", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📋 Referencias (para buscar IDs)",
+      "item": [
+        {
+          "name": "Listar clientes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": ["{{baseUrl}}"],
+              "path": ["clientes"]
+            }
+          }
+        },
+        {
+          "name": "Listar proveedores",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/proveedor",
+              "host": ["{{baseUrl}}"],
+              "path": ["proveedor"]
+            }
+          }
+        },
+        {
+          "name": "Listar productos",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/productos",
+              "host": ["{{baseUrl}}"],
+              "path": ["productos"]
+            }
+          }
+        },
+        {
+          "name": "Listar presentaciones",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/presentaciones",
+              "host": ["{{baseUrl}}"],
+              "path": ["presentaciones"]
+            }
+          }
+        },
+        {
+          "name": "Listar sucursales",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sucursales",
+              "host": ["{{baseUrl}}"],
+              "path": ["sucursales"]
+            }
+          }
+        },
+        {
+          "name": "Listar tipo de pago",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tipo-pago",
+              "host": ["{{baseUrl}}"],
+              "path": ["tipo-pago"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

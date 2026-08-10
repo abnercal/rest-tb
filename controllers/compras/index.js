@@ -48,6 +48,15 @@ const deleteCompraCtrl = async (req, res) => {
   }
 };
 
+const registrarPagoCompraCtrl = async (req, res) => {
+  try {
+    const data = await feature.registrarPagoCompraFtr(req.params.id, req.body);
+    return successResponse(res, "Pago registrado", data, null, 201);
+  } catch (error) {
+    return errorResponse(res, error, "Error al registrar pago");
+  }
+};
+
 const nextCodeCtrl = async (req, res) => {
   try {
     const result = await feature.nextCodeFtr();
@@ -63,6 +72,7 @@ module.exports = {
   createCompraCtrl,
   updateCompraCtrl,
   deleteCompraCtrl,
+  registrarPagoCompraCtrl,
   nextCodeCtrl,
 };
 

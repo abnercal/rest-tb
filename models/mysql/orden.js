@@ -27,7 +27,9 @@ const Orden = dbConnect.define('Orden', {
   idcliente: {
     field: 'idclientes',
     type: DataTypes.INTEGER,
-    allowNull: true
+    // La columna en BD es NOT NULL: createVentaFtr siempre resuelve un cliente
+    // (el elegido o el genérico "Consumidor Final") antes de crear la Orden.
+    allowNull: false
   },
   idestado: {
     field: 'idestado',
@@ -54,6 +56,20 @@ const Orden = dbConnect.define('Orden', {
     type: DataTypes.STRING(100),
     allowNull: false
   },
+  fecha_limite_pago: {
+    field: 'fecha_limite_pago',
+    type: DataTypes.DATEONLY,
+    allowNull: true
+  },
+  fecha_conversion: {
+    field: 'fecha_conversion',
+    type: DataTypes.DATE,
+    allowNull: true,
+    // Se setea SOLO cuando convertirCotizacionFtr convierte una Cotización en
+    // venta. Si está presente, esta orden pasó por Cotización; si es null, se
+    // creó directo como venta confirmada (POS) — nunca necesita "Entregada"
+    // porque el despacho ya fue inmediato.
+  },
 }, {
   tableName: 'orden',
   timestamps: true,
@@ -63,6 +79,10 @@ Orden.associate = (models) => {
   Orden.belongsTo(models.Cliente, { foreignKey: 'idclientes', as: 'Cliente' });
   Orden.hasMany(models.OrdenDetalle, { foreignKey: 'idorden', as: 'Detalles' });
   Orden.hasOne(models.Pago, { foreignKey: 'idorden', as: 'Pago' });
+  Orden.hasMany(models.Pago, { foreignKey: 'idorden', as: 'Pagos' });
+  Orden.belongsTo(models.EstadoOrden, { foreignKey: 'idestado', as: 'Estado' });
+  Orden.belongsTo(models.Sucursal, { foreignKey: 'idsucursal' });
+  Orden.belongsTo(models.Usuario, { foreignKey: 'idusuario' });
 };
 
 Orden.findAllData = function (options = {}) {

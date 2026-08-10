@@ -47,6 +47,10 @@ CompraDetalle.associate = (models) => {
     foreignKey: 'idprodPresenta',
     as: 'ProductoPresentacion',
   });
+  CompraDetalle.hasOne(models.Lote, {
+    foreignKey: 'idcompra_detalle',
+    as: 'Lote',
+  });
 };
 
 CompraDetalle.findAllData  = function(){

@@ -11,5 +11,6 @@ router.get("/:id",          verifyJWT, checkPermiso("compras:read"),            
 router.post("/",            verifyJWT, checkPermiso("compras:create"), createCompraValidator,     ctrl.createCompraCtrl);
 router.put("/:id",          verifyJWT, checkPermiso("compras:update"), updateCompraValidator,     ctrl.updateCompraCtrl);
 router.post("/anular/:id",  verifyJWT, checkPermiso("compras:delete"),                           ctrl.deleteCompraCtrl);
+router.post("/:id/pagos",   verifyJWT, checkPermiso("compras:update"),                           ctrl.registrarPagoCompraCtrl);
 
 module.exports = router;

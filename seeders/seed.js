@@ -41,6 +41,10 @@ const PERMISOS = [
   "reporte:read",
   // Precios por tipo de cliente
   "precios:read", "precios:create", "precios:update", "precios:delete",
+  // Lotes (control de vencimiento)
+  "lotes:read",
+  // Descuentos
+  "descuentos:read", "descuentos:create", "descuentos:update", "descuentos:delete",
 ];
 
 const PERMISOS_VENDEDOR = [
@@ -196,9 +200,10 @@ async function runSeed() {
 
     await db.EstadoOrden.bulkCreate(
       [
-        { nombre: "Nuevo", descripcion: "Nueva venta" },
-        { nombre: "Anulado", descripcion: "Anulacion de venta" },
-        { nombre: "Credito", descripcion: "Credito venta" },
+        { nombre: "Cotizacion", descripcion: "Cotización / proforma, no afecta inventario" },
+        { nombre: "Confirmada", descripcion: "Venta confirmada, descuenta inventario" },
+        { nombre: "Entregada", descripcion: "Venta entregada al cliente" },
+        { nombre: "Anulada", descripcion: "Venta anulada" },
       ],
       { transaction }
     );

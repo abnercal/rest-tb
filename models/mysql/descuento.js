@@ -10,7 +10,7 @@ const Descuento = dbConnect.define('Descuento', {
     primaryKey: true,
     allowNull: false
   },
-  precio: {
+  valorDescuento: {
     type: DataTypes.DECIMAL(18, 4),
     allowNull: true,
     defaultValue: 0
@@ -27,13 +27,18 @@ const Descuento = dbConnect.define('Descuento', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
-  idproducto: {
-    type: DataTypes.STRING(25),
-    allowNull: true
+  idprodPresenta: {
+    type: DataTypes.INTEGER,
+    allowNull: false
   },
   estado: {
     type: DataTypes.TINYINT, // Para valores pequeños como -128 a 127
     allowNull: true
+  },
+  tipo_descuento: {
+    type: DataTypes.ENUM('porcentaje', 'monto_fijo'),
+    allowNull: true,
+    defaultValue: 'porcentaje'
   }
 }, {
   tableName: 'descuentos', // Nombre de la tabla en la base de datos
@@ -41,8 +46,9 @@ const Descuento = dbConnect.define('Descuento', {
   charset: 'utf8mb3' // Asegúrate de que el charset sea consistente con tu base de datos
 });
 
-// Definir asociaciones si es necesario
-// Por ejemplo, si quieres definir la asociación con la tabla producto
-// Descuento.belongsTo(Producto, { foreignKey: 'idproducto' });
+// Definir asociaciones
+Descuento.associate = (models) => {
+  Descuento.belongsTo(models.ProductoPresentacion, { foreignKey: 'idprodPresenta' });
+};
 
 module.exports = Descuento;

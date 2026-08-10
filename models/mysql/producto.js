@@ -52,6 +52,12 @@ const Producto = dbConnect.define('Producto', {
     type: DataTypes.DECIMAL(18,2),
     allowNull: true,
     defaultValue: 0
+  },
+  controla_vencimiento: {
+    field: "controla_vencimiento",
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: false
   }
 }, {
   tableName: 'producto', // Nombre de la tabla en la base de datos

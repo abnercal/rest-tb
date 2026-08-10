@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const moment = require("moment");
 const models = require("../../models/mysql");
 const { obtenerPrecioCorrecto } = require("../../helpers/precio-helper");
+const { ESTADOS_ORDEN, getEstadoOrdenId } = require("../../helpers/estado-orden-helper");
 
 /**
  * Helper: include de detalle con presentación
@@ -45,6 +46,7 @@ const getVentasFtr = async (query) => {
     where,
     include: [
       { model: models.Cliente, as: "Cliente" },
+      { model: models.EstadoOrden, as: "Estado" },
       INCLUDE_DETALLE(),
     ],
     order: [["createdAt", "DESC"]],
@@ -70,15 +72,19 @@ const getVentasFtr = async (query) => {
 };
 
 /**
- * Obtener venta por ID con detalles, pago y cliente
+ * Obtener venta por ID con detalles, pago(s) y cliente.
+ * Incluye tanto el `Pago` singular (compatibilidad con código existente)
+ * como el `Pagos` plural (abonos/pagos parciales), y calcula `saldoPendiente`.
  */
 const getVentaFtr = async (id) => {
   const orden = await models.Orden.findOne({
     where: { _id: id },
     include: [
       { model: models.Cliente, as: "Cliente" },
+      { model: models.EstadoOrden, as: "Estado" },
       INCLUDE_DETALLE(),
       { model: models.Pago, as: "Pago" },
+      { model: models.Pago, as: "Pagos" },
     ],
   });
 
@@ -87,15 +93,148 @@ const getVentaFtr = async (id) => {
     error.status = 404;
     throw error;
   }
-  return orden;
+
+  const ordenPlain = orden.toJSON();
+  const totalPagado = (ordenPlain.Pagos || []).reduce(
+    (acc, p) => acc + Number(p.importe || 0),
+    0
+  );
+  ordenPlain.saldoPendiente = Number(ordenPlain.total || 0) - totalPagado;
+
+  return ordenPlain;
 };
 
 /**
- * Crear venta (orden) con detalles, validar stock y registrar pago
+ * Descuenta stock de Almacen y registra Kardex para un detalle de venta.
+ *
+ * Si el producto controla vencimiento, consume Lotes en orden FEFO
+ * (First-Expired-First-Out) y escribe UN registro de Kardex por lote
+ * consumido (con `idlote` seteado). Si no controla vencimiento, escribe
+ * un único registro de Kardex (idlote: null), igual que antes.
+ *
+ * En ambos casos `Almacen.stock` se actualiza UNA sola vez con el total
+ * de unidades descontadas — sigue siendo la única fuente de verdad para
+ * el stock agregado; los Lotes son solo el desglose de qué lote lo cubrió.
+ *
+ * Reutilizado tanto por `createVentaFtr` (venta confirmada) como por
+ * `convertirCotizacionFtr` (cotización que se convierte en venta).
+ */
+async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusuario, idorden, fecha, transaction }) {
+  const unidadesADescontar = Number(cantidad) * Number(pp.cantidad_base);
+
+  const almacen = await models.Almacen.findOne({
+    where: { codigoprod: pp.codigoprod, idsucursal },
+    transaction,
+  });
+
+  if (!almacen) {
+    const error = new Error(`No hay stock registrado para: ${pp.Producto?.nombre}`);
+    error.status = 409;
+    error.code = "STOCK_INSUFICIENTE";
+    throw error;
+  }
+
+  // stockCorriente se usa solo para el bookkeeping stock_anterior/stock_nuevo del kardex;
+  // Almacen.stock se persiste una sola vez al final con el valor final.
+  let stockCorriente = Number(almacen.stock);
+
+  if (pp.Producto?.controla_vencimiento) {
+    const lotes = await models.Lote.findAll({
+      where: {
+        codigoprod: pp.codigoprod,
+        idsucursal,
+        estado: 1,
+        cantidad_disponible: { [Op.gt]: 0 },
+      },
+      order: [["fecha_vencimiento", "ASC"]],
+      transaction,
+    });
+
+    let remaining = unidadesADescontar;
+
+    for (const lote of lotes) {
+      if (remaining <= 0) break;
+
+      const tomar = Math.min(Number(lote.cantidad_disponible), remaining);
+      if (tomar <= 0) continue;
+
+      lote.cantidad_disponible = Number(lote.cantidad_disponible) - tomar;
+      await lote.save({ transaction });
+
+      const stockNuevo = stockCorriente - tomar;
+
+      await models.Kardex.create(
+        {
+          codigoprod: pp.codigoprod,
+          idsucursal,
+          idusuario,
+          tipo: "VENTA",
+          cantidad: tomar,
+          stock_anterior: stockCorriente,
+          stock_nuevo: stockNuevo,
+          referencia: idorden,
+          fecha,
+          idlote: lote.idlote,
+          idprodPresenta: pp.idprodPresenta,
+        },
+        { transaction }
+      );
+
+      stockCorriente = stockNuevo;
+      remaining -= tomar;
+    }
+
+    // Red de seguridad: Almacen y Lotes podrían teóricamente haberse desincronizado.
+    if (remaining > 0) {
+      const error = new Error(`Stock insuficiente en lotes para: ${pp.Producto?.nombre}`);
+      error.status = 409;
+      error.code = "STOCK_INSUFICIENTE";
+      throw error;
+    }
+  } else {
+    const stockNuevo = stockCorriente - unidadesADescontar;
+
+    await models.Kardex.create(
+      {
+        codigoprod: pp.codigoprod,
+        idsucursal,
+        idusuario,
+        tipo: "VENTA",
+        cantidad: unidadesADescontar,
+        stock_anterior: stockCorriente,
+        stock_nuevo: stockNuevo,
+        referencia: idorden,
+        fecha,
+        idlote: null,
+        idprodPresenta: pp.idprodPresenta,
+      },
+      { transaction }
+    );
+
+    stockCorriente = stockNuevo;
+  }
+
+  almacen.stock = stockCorriente;
+  await almacen.save({ transaction });
+}
+
+/**
+ * Crear venta (orden) con detalles.
+ *
+ * - `esCotizacion: true` → crea una Cotización: NO toca Almacen.stock, NO
+ *   crea Kardex, NO consume Lotes, y NO crea Pago (una cotización no tiene
+ *   pago todavía).
+ * - `esCotizacion: false` (default) → venta confirmada: valida stock,
+ *   descuenta Almacen/Lotes, registra Kardex y crea el Pago inicial.
+ *
+ * El precio SIEMPRE lo resuelve el servidor vía `obtenerPrecioCorrecto`
+ * — el `precio` que venga en el body, si viene, se ignora y se sobrescribe.
+ *
  * Body esperado:
  * {
  *   nombre, fecha, direccion, idcliente, idusuario, idsucursal,
- *   detalles: [{ idprodPresenta, cantidad, precio }],
+ *   esCotizacion: boolean,
+ *   detalles: [{ idprodPresenta, cantidad }],
  *   pago: { idtipopago, estado }
  * }
  */
@@ -103,7 +242,7 @@ const createVentaFtr = async (body) => {
   const transaction = await models.sequelize.transaction();
 
   try {
-    const { detalles = [], pago = {}, ...ordenData } = body;
+    const { detalles = [], pago = {}, esCotizacion = false, idTipoCliVenta, ...ordenData } = body;
 
     // Auto-generar referencia si no se envió
     if (!ordenData.referencia) {
@@ -111,7 +250,23 @@ const createVentaFtr = async (body) => {
       ordenData.referencia = await generarSiguienteCodigo("VENTA");
     }
 
-    // Validar cliente
+    // Si no se envía cliente (venta mostrador/anónima), usar el cliente genérico
+    // "Consumidor Final" (nit "CF", sembrado en el seed) en vez de rechazar la venta.
+    // Es el mismo criterio que usa SAT/Guatemala para ventas al público sin NIT real.
+    if (!ordenData.idcliente) {
+      const clienteMostrador = await models.Cliente.findOne({ where: { nit: "CF" }, transaction });
+      if (!clienteMostrador) {
+        const error = new Error(
+          'No se encontró el cliente genérico "Consumidor Final" (nit "CF"). Verificá el seed de clientes.'
+        );
+        error.status = 500;
+        error.code = "CLIENTE_MOSTRADOR_NO_CONFIGURADO";
+        throw error;
+      }
+      ordenData.idcliente = clienteMostrador._id;
+    }
+
+    // Validar cliente y resolver tipo de cliente UNA sola vez (antes se duplicaba)
     const cliente = await models.Cliente.findByPk(ordenData.idcliente, { transaction });
     if (!cliente) {
       const error = new Error("El cliente no existe");
@@ -119,9 +274,20 @@ const createVentaFtr = async (body) => {
       throw error;
     }
 
-    let total = 0;
+    // idTipoCliVenta permite fijar el tipo de precio (mayorista/minorista/otro) para
+    // ESTA venta puntual, independiente del idtipoCli registrado en el cliente — el
+    // POS lo usa para vender "como mayorista" sin obligar a buscar/crear un cliente
+    // específico. Si no se envía, se usa el tipo de cliente real (comportamiento actual).
+    const idtipoCli = idTipoCliVenta ?? cliente.idtipoCli;
 
-    // Validar presentaciones y stock
+    // Resolver el estado destino por nombre (sin magic numbers)
+    const idestado = await getEstadoOrdenId(
+      esCotizacion ? ESTADOS_ORDEN.COTIZACION : ESTADOS_ORDEN.CONFIRMADA
+    );
+
+    // Resolver presentación + precio correcto para cada detalle (el servidor decide el precio, siempre)
+    let total = 0;
+    const detallesResueltos = [];
     for (const detalle of detalles) {
       const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
         include: ["Producto"],
@@ -134,13 +300,163 @@ const createVentaFtr = async (body) => {
         throw error;
       }
 
+      const precioResuelto = await obtenerPrecioCorrecto(detalle.idprodPresenta, idtipoCli, detalle.cantidad);
+      detalle.precio = precioResuelto.precio;
+
+      total += Number(detalle.cantidad) * Number(detalle.precio);
+      detallesResueltos.push({ detalle, pp });
+    }
+
+    // Validar stock solo si NO es cotización — una cotización no compromete inventario
+    if (!esCotizacion) {
+      for (const { detalle, pp } of detallesResueltos) {
+        const unidadesADescontar = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
+        const almacen = await models.Almacen.findOne({
+          where: { codigoprod: pp.codigoprod, idsucursal: ordenData.idsucursal },
+          transaction,
+        });
+
+        if (!almacen || Number(almacen.stock) < unidadesADescontar) {
+          const error = new Error(`Stock insuficiente para: ${pp.Producto?.nombre}`);
+          error.status = 409;
+          error.code = "STOCK_INSUFICIENTE";
+          error.detalles = [{
+            idprodPresenta: detalle.idprodPresenta,
+            producto: pp.Producto?.nombre,
+            stockActual: Number(almacen?.stock || 0),
+            requerido: unidadesADescontar
+          }];
+          throw error;
+        }
+      }
+    }
+
+    // Crear la orden (cotización o venta confirmada)
+    const nuevaOrden = await models.Orden.create(
+      {
+        ...ordenData,
+        total,
+        fecha: ordenData.fecha || moment().format('YYYY-MM-DD HH:mm:ss'),
+        idestado,
+      },
+      { transaction }
+    );
+
+    // Crear detalles (siempre); descontar stock/kardex/lotes solo si NO es cotización
+    for (const { detalle, pp } of detallesResueltos) {
+      await models.OrdenDetalle.create(
+        {
+          cantidad: detalle.cantidad,
+          precio: detalle.precio,
+          idorden: nuevaOrden._id,
+          idprodPresenta: detalle.idprodPresenta,
+        },
+        { transaction }
+      );
+
+      if (!esCotizacion) {
+        await _descontarStockYRegistrarKardex({
+          pp,
+          cantidad: detalle.cantidad,
+          idsucursal: ordenData.idsucursal,
+          idusuario: ordenData.idusuario,
+          idorden: nuevaOrden._id,
+          fecha: nuevaOrden.fecha,
+          transaction,
+        });
+      }
+    }
+
+    // Registrar pago inicial solo si NO es cotización
+    if (!esCotizacion) {
+      await models.Pago.create(
+        {
+          estado: pago.estado || "Pendiente",
+          importe: total,
+          idorden: nuevaOrden._id,
+          idtipopago: pago.idtipopago || 3,
+          fecha_pago: new Date(),
+        },
+        { transaction }
+      );
+    }
+
+    await transaction.commit();
+
+    return getVentaFtr(nuevaOrden._id);
+
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+};
+
+/**
+ * Convierte una Cotización en una venta Confirmada: re-resuelve precios,
+ * valida y descuenta stock (misma lógica que createVentaFtr), y actualiza
+ * el estado a Confirmada.
+ *
+ * Decisión: se RE-RESUELVE el precio (no se congela el precio cotizado).
+ * El momento que compromete inventario real es el que importa para el
+ * negocio — una cotización es indicativa, no vinculante — y los precios o
+ * descuentos pueden haber cambiado entre la cotización y la conversión.
+ */
+const convertirCotizacionFtr = async (id, body = {}) => {
+  const transaction = await models.sequelize.transaction();
+
+  try {
+    const orden = await models.Orden.findOne({
+      where: { _id: id },
+      include: [
+        { model: models.Cliente, as: "Cliente" },
+        {
+          model: models.OrdenDetalle,
+          as: "Detalles",
+          include: [{ association: "ProductoPresentacion", include: ["Producto"] }],
+        },
+      ],
+      transaction,
+    });
+
+    if (!orden) {
+      const error = new Error("Venta no encontrada");
+      error.status = 404;
+      throw error;
+    }
+
+    const idCotizacion = await getEstadoOrdenId(ESTADOS_ORDEN.COTIZACION);
+    const idConfirmada = await getEstadoOrdenId(ESTADOS_ORDEN.CONFIRMADA);
+
+    if (orden.idestado !== idCotizacion) {
+      const error = new Error("Solo se puede convertir una orden en estado Cotización");
+      error.status = 409;
+      error.code = "ORDEN_NO_ES_COTIZACION";
+      throw error;
+    }
+
+    const idtipoCli = orden.Cliente?.idtipoCli ?? null;
+
+    // Re-resolver precio de cada detalle (ver nota de decisión arriba)
+    let total = 0;
+    const detallesResueltos = [];
+    for (const detalle of orden.Detalles) {
+      const pp = detalle.ProductoPresentacion;
+
+      const precioResuelto = await obtenerPrecioCorrecto(detalle.idprodPresenta, idtipoCli, detalle.cantidad);
+      detalle.precio = precioResuelto.precio;
+      await detalle.save({ transaction });
+
+      total += Number(detalle.cantidad) * Number(detalle.precio);
+      detallesResueltos.push({ detalle, pp });
+    }
+
+    // Validar stock (misma regla que createVentaFtr)
+    for (const { detalle, pp } of detallesResueltos) {
       const unidadesADescontar = Number(detalle.cantidad) * Number(pp.cantidad_base);
 
       const almacen = await models.Almacen.findOne({
-        where: {
-          codigoprod: pp.codigoprod,
-          idsucursal: ordenData.idsucursal,
-        },
+        where: { codigoprod: pp.codigoprod, idsucursal: orden.idsucursal },
         transaction,
       });
 
@@ -156,129 +472,42 @@ const createVentaFtr = async (body) => {
         }];
         throw error;
       }
-
-      total += Number(detalle.cantidad) * Number(detalle.precio);
     }
 
-    // Resolver tipo de cliente para validación de precios
-    let idtipoCli = null;
-    if (body.idcliente) {
-      const cliente = await models.Cliente.findByPk(body.idcliente, { transaction });
-      if (cliente) {
-        idtipoCli = cliente.idtipoCli;
-      }
-    }
-
-    // Validar precios de cada detalle contra el precio correcto
-    const erroresPrecio = [];
-    for (const detalle of detalles) {
-      try {
-        const precioCorrecto = await obtenerPrecioCorrecto(detalle.idprodPresenta, idtipoCli);
-        if (Math.abs(Number(detalle.precio) - Number(precioCorrecto.precio)) > 0.01) {
-          erroresPrecio.push({
-            idprodPresenta: detalle.idprodPresenta,
-            esperado: Number(precioCorrecto.precio),
-            recibido: Number(detalle.precio),
-          });
-        }
-      } catch (err) {
-        if (err.code === "PRECIO_NO_DISPONIBLE") {
-          erroresPrecio.push({
-            idprodPresenta: detalle.idprodPresenta,
-            error: "PRECIO_NO_DISPONIBLE",
-            mensaje: "Producto sin precio disponible para esta presentación",
-          });
-        } else {
-          throw err; // error inesperado, dejar que el catch de afuera lo maneje
-        }
-      }
-    }
-
-    if (erroresPrecio.length > 0) {
-      const err = new Error("Precios incorrectos en la venta");
-      err.status = 409;
-      err.code = "PRECIO_INCORRECTO";
-      err.detalles = erroresPrecio;
-      throw err;
-    }
-
-    // Crear venta
-    const ESTADO_CREADO = 1;
-    const nuevaOrden = await models.Orden.create(
-      {
-        ...ordenData,
-        total,
-        fecha: ordenData.fecha || moment().format('YYYY-MM-DD HH:mm:ss'),
-        idestado: ESTADO_CREADO,
-      },
-      { transaction }
-    );
-
-    // Crear detalles + actualizar stock + kardex
-    for (const detalle of detalles) {
-      const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
-        include: ["Producto"],
+    // Descontar stock + kardex + lotes (misma lógica que una venta confirmada)
+    for (const { detalle, pp } of detallesResueltos) {
+      await _descontarStockYRegistrarKardex({
+        pp,
+        cantidad: detalle.cantidad,
+        idsucursal: orden.idsucursal,
+        idusuario: orden.idusuario,
+        idorden: orden._id,
+        fecha: new Date(),
         transaction,
       });
+    }
 
-      await models.OrdenDetalle.create(
+    // fecha_conversion marca que esta orden pasó por Cotización — habilita
+    // la acción "marcar entregada" en el frontend, que no aplica a una venta
+    // creada directo (POS), porque ahí el despacho ya fue inmediato.
+    await orden.update({ idestado: idConfirmada, total, fecha_conversion: new Date() }, { transaction });
+
+    if (body.pago) {
+      await models.Pago.create(
         {
-          cantidad: detalle.cantidad,
-          precio: detalle.precio,
-          idorden: nuevaOrden._id,
-          idprodPresenta: detalle.idprodPresenta,
-        },
-        { transaction }
-      );
-
-      const unidadesADescontar = Number(detalle.cantidad) * Number(pp.cantidad_base);
-
-      const almacen = await models.Almacen.findOne({
-        where: {
-          codigoprod: pp.codigoprod,
-          idsucursal: ordenData.idsucursal,
-        },
-        transaction,
-      });
-
-      const stockAnterior = Number(almacen.stock);
-      const stockNuevo = stockAnterior - unidadesADescontar;
-
-      almacen.stock = stockNuevo;
-      await almacen.save({ transaction });
-
-      // KARDEX (SALIDA)
-      await models.Kardex.create(
-        {
-          codigoprod: pp.codigoprod,
-          idsucursal: ordenData.idsucursal,
-          idusuario: ordenData.idusuario,
-          tipo: "VENTA",
-          cantidad: unidadesADescontar,
-          stock_anterior: stockAnterior,
-          stock_nuevo: stockNuevo,
-          referencia: nuevaOrden._id,
-          fecha: nuevaOrden.fecha,
+          estado: body.pago.estado || "Pendiente",
+          importe: body.pago.importe ?? total,
+          idorden: orden._id,
+          idtipopago: body.pago.idtipopago || 3,
+          fecha_pago: new Date(),
         },
         { transaction }
       );
     }
-
-    // Registrar pago
-    await models.Pago.create(
-      {
-        estado: pago.estado || "Pendiente",
-        importe: total,
-        idorden: nuevaOrden._id,
-        idtipopago: pago.idtipopago || 3,
-        fecha_pago: new Date(),
-      },
-      { transaction }
-    );
 
     await transaction.commit();
 
-    return getVentaFtr(nuevaOrden._id);
+    return getVentaFtr(orden._id);
 
   } catch (error) {
     await transaction.rollback();
@@ -308,67 +537,155 @@ const updateVentaFtr = async (id, body) => {
 };
 
 /**
- * Anular venta: reversa de stock
+ * Anular venta.
+ *
+ * - Si la orden está en Cotización, se anula SIN reversar stock (una
+ *   cotización nunca lo tocó).
+ * - Si la orden es una venta confirmada/entregada, se reversa leyendo los
+ *   registros de Kardex reales que la venta generó (tipo VENTA, referencia
+ *   = id de la orden) — esto garantiza reversar exactamente lo que se tomó,
+ *   y de exactamente qué lotes salió.
  */
 const deleteVentaFtr = async (id) => {
   const transaction = await models.sequelize.transaction();
 
   try {
-    const orden = await models.Orden.findByPk(id);
+    const orden = await models.Orden.findByPk(id, { transaction });
     if (!orden) throw new Error("Venta no encontrada");
 
-    if (orden.idestado === 3) {
+    const idAnulada = await getEstadoOrdenId(ESTADOS_ORDEN.ANULADA);
+    const idCotizacion = await getEstadoOrdenId(ESTADOS_ORDEN.COTIZACION);
+
+    if (orden.idestado === idAnulada) {
       throw new Error("La venta ya está anulada");
     }
 
-    const detalles = await models.OrdenDetalle.findAll({
-      where: { idorden: id },
+    if (orden.idestado === idCotizacion) {
+      // Una cotización nunca tocó el inventario: anular sin reversar stock
+      await orden.update({ idestado: idAnulada }, { transaction });
+      await transaction.commit();
+      return true;
+    }
+
+    const kardexVenta = await models.Kardex.findAll({
+      where: { referencia: id, tipo: "VENTA" },
       transaction,
     });
 
-    for (const detalle of detalles) {
-      const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
-        transaction,
-      });
-
-      const unidadesARevertir = Number(detalle.cantidad) * Number(pp.cantidad_base);
-
+    for (const k of kardexVenta) {
       const almacen = await models.Almacen.findOne({
-        where: {
-          codigoprod: pp.codigoprod,
-          idsucursal: orden.idsucursal,
-        },
+        where: { codigoprod: k.codigoprod, idsucursal: k.idsucursal },
         transaction,
       });
 
       const stockAnterior = Number(almacen.stock);
-      const stockNuevo = stockAnterior + unidadesARevertir;
+      const stockNuevo = stockAnterior + Number(k.cantidad);
 
       almacen.stock = stockNuevo;
       await almacen.save({ transaction });
 
+      if (k.idlote) {
+        const lote = await models.Lote.findByPk(k.idlote, { transaction });
+        if (lote) {
+          lote.cantidad_disponible = Number(lote.cantidad_disponible) + Number(k.cantidad);
+          await lote.save({ transaction });
+        }
+      }
+
       // KARDEX REVERSA
       await models.Kardex.create(
         {
-          codigoprod: pp.codigoprod,
-          idsucursal: orden.idsucursal,
+          codigoprod: k.codigoprod,
+          idsucursal: k.idsucursal,
           idusuario: orden.idusuario,
           tipo: "ANULACION_VENTA",
-          cantidad: unidadesARevertir,
+          cantidad: k.cantidad,
           stock_anterior: stockAnterior,
           stock_nuevo: stockNuevo,
           referencia: id,
-          fecha: orden.fecha,
+          fecha: new Date(),
+          idlote: k.idlote,
+          idprodPresenta: k.idprodPresenta,
         },
         { transaction }
       );
     }
 
-    await orden.update({ idestado: 3 }, { transaction });
+    await orden.update({ idestado: idAnulada }, { transaction });
 
     await transaction.commit();
     return true;
 
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+};
+
+/**
+ * Marca una venta Confirmada como Entregada. Solo tiene sentido para órdenes
+ * que pasaron por Cotización (tienen fecha_conversion) — una venta creada
+ * directo (POS) ya fue despachada en el momento de la creación, así que el
+ * frontend no ofrece esta acción para esas, pero el backend no lo bloquea:
+ * es una decisión de UI, no una regla de negocio dura.
+ */
+const marcarEntregadaFtr = async (id) => {
+  const transaction = await models.sequelize.transaction();
+  try {
+    const orden = await models.Orden.findByPk(id, { transaction });
+    if (!orden) {
+      const error = new Error("Venta no encontrada");
+      error.status = 404;
+      throw error;
+    }
+
+    const idConfirmada = await getEstadoOrdenId(ESTADOS_ORDEN.CONFIRMADA);
+    if (orden.idestado !== idConfirmada) {
+      const error = new Error("Solo se puede marcar como entregada una venta Confirmada");
+      error.status = 409;
+      error.code = "ORDEN_NO_ES_CONFIRMADA";
+      throw error;
+    }
+
+    const idEntregada = await getEstadoOrdenId(ESTADOS_ORDEN.ENTREGADA);
+    await orden.update({ idestado: idEntregada }, { transaction });
+
+    await transaction.commit();
+    return getVentaFtr(id);
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+};
+
+/**
+ * Registrar un pago (abono) sobre una venta existente. Soporta pagos
+ * parciales — la orden puede tener múltiples registros de Pago; el saldo
+ * pendiente (cuentas por cobrar) se deriva sumándolos en `getVentaFtr`.
+ */
+const registrarPagoFtr = async (idorden, body = {}) => {
+  const transaction = await models.sequelize.transaction();
+  try {
+    const orden = await models.Orden.findByPk(idorden, { transaction });
+    if (!orden) {
+      const error = new Error("Venta no encontrada");
+      error.status = 404;
+      throw error;
+    }
+
+    const pago = await models.Pago.create(
+      {
+        idorden,
+        importe: body.importe,
+        idtipopago: body.idtipopago,
+        estado: body.estado || "Pendiente",
+        fecha_pago: body.fecha_pago || new Date(),
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+    return pago;
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -387,7 +704,10 @@ module.exports = {
   getVentasFtr,
   getVentaFtr,
   createVentaFtr,
+  convertirCotizacionFtr,
   updateVentaFtr,
   deleteVentaFtr,
+  marcarEntregadaFtr,
+  registrarPagoFtr,
   nextCodeFtr,
 };

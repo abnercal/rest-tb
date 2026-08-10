@@ -51,6 +51,11 @@ const Compra = dbConnect.define('Compra', {
     field:'idsucursal',
     type: DataTypes.INTEGER,
     allowNull: true
+  },
+  fecha_limite_pago: {
+    field:'fecha_limite_pago',
+    type: DataTypes.DATEONLY,
+    allowNull: true
   }
 }, {
   tableName: 'compra',
@@ -72,6 +77,10 @@ Compra.associate = (models) => {
   Compra.hasMany(models.CompraDetalle, {
     foreignKey: 'idcompra',
     as: 'Detalles'
+  });
+  Compra.hasMany(models.PagoCompra, {
+    foreignKey: 'idcompra',
+    as: 'Pagos'
   });
 }
 Compra.findAllData  = function(options){

@@ -46,6 +46,33 @@ const deleteVentaCtrl = async (req, res) => {
   }
 };
 
+const convertirCotizacionCtrl = async (req, res) => {
+  try {
+    const data = await feature.convertirCotizacionFtr(req.params.id, req.body);
+    return successResponse(res, "Cotización convertida a venta", data);
+  } catch (error) {
+    return errorResponse(res, error, "Error al convertir cotización");
+  }
+};
+
+const marcarEntregadaCtrl = async (req, res) => {
+  try {
+    const data = await feature.marcarEntregadaFtr(req.params.id);
+    return successResponse(res, "Venta marcada como entregada", data);
+  } catch (error) {
+    return errorResponse(res, error, "Error al marcar venta como entregada");
+  }
+};
+
+const registrarPagoCtrl = async (req, res) => {
+  try {
+    const data = await feature.registrarPagoFtr(req.params.id, req.body);
+    return successResponse(res, "Pago registrado", data, null, 201);
+  } catch (error) {
+    return errorResponse(res, error, "Error al registrar pago");
+  }
+};
+
 const nextCodeCtrl = async (req, res) => {
   try {
     const result = await feature.nextCodeFtr();
@@ -61,5 +88,8 @@ module.exports = {
   createVentaCtrl,
   updateVentaCtrl,
   deleteVentaCtrl,
+  convertirCotizacionCtrl,
+  marcarEntregadaCtrl,
+  registrarPagoCtrl,
   nextCodeCtrl,
 };

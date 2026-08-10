@@ -66,7 +66,8 @@ const getComprasFtr = async (query) => {
 };
 
 /**
- * Obtener compra por ID con detalles
+ * Obtener compra por ID con detalles y pago(s). Calcula `saldoPendiente`
+ * (cuentas por pagar) sumando los PagoCompra existentes.
  */
 const getCompraFtr = async (id) => {
   const compra = await models.Compra.findOne({
@@ -76,6 +77,7 @@ const getCompraFtr = async (id) => {
       { model: models.Sucursal, as: "Sucursal" },
       { model: models.Usuario, as: "Usuario", attributes: { exclude: ["password"] } },
       INCLUDE_DETALLE(),
+      { model: models.PagoCompra, as: "Pagos" },
     ],
   });
 
@@ -84,15 +86,25 @@ const getCompraFtr = async (id) => {
     error.status = 404;
     throw error;
   }
-  return compra;
+
+  const compraPlain = compra.toJSON();
+  const totalPagado = (compraPlain.Pagos || []).reduce(
+    (acc, p) => acc + Number(p.importe || 0),
+    0
+  );
+  compraPlain.saldoPendiente = Number(compraPlain.total || 0) - totalPagado;
+
+  return compraPlain;
 };
 
 /**
- * Crear compra + detalles + actualizar stock en almacén
+ * Crear compra + detalles + actualizar stock en almacén (+ Lote si el
+ * producto controla vencimiento) + registrar pago inicial de la compra.
  * Body esperado:
  * {
  *   nombre, fecha, direccion, idproveedor, idusuario, idsucursal,
- *   detalles: [{ idprodPresenta, cantidad, costo }]
+ *   detalles: [{ idprodPresenta, cantidad, costo, fecha_vencimiento? }],
+ *   pago: { idtipopago, estado }
  * }
  */
 const createCompraFtr = async (body) => {
@@ -136,7 +148,7 @@ const createCompraFtr = async (body) => {
     // ✅ Crear compra
     const compra = await models.Compra.create(compraData, { transaction });
 
-    // ✅ Crear detalles + actualizar stock + kardex
+    // ✅ Crear detalles + Lote (si aplica) + actualizar stock + kardex
     for (const detalle of detalles) {
       const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
         include: ["Producto"],
@@ -147,7 +159,18 @@ const createCompraFtr = async (body) => {
         throw new Error(`Presentación ${detalle.idprodPresenta} no existe`);
       }
 
-      await models.CompraDetalle.create(
+      const controlaVencimiento = !!pp.Producto?.controla_vencimiento;
+
+      if (controlaVencimiento && !detalle.fecha_vencimiento) {
+        const error = new Error(
+          `El producto "${pp.Producto?.nombre}" controla vencimiento: fecha_vencimiento es obligatoria`
+        );
+        error.status = 400;
+        error.code = "FECHA_VENCIMIENTO_REQUERIDA";
+        throw error;
+      }
+
+      const compraDetalle = await models.CompraDetalle.create(
         {
           cantidad: detalle.cantidad,
           costo: detalle.costo,
@@ -158,6 +181,25 @@ const createCompraFtr = async (body) => {
       );
 
       const unidadesBase = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
+      // Lote opt-in por producto (controla_vencimiento)
+      let idlote = null;
+      if (controlaVencimiento) {
+        const lote = await models.Lote.create(
+          {
+            codigoprod: pp.codigoprod,
+            idsucursal: compra.idsucursal,
+            idcompra_detalle: compraDetalle._id,
+            cantidad_inicial: unidadesBase,
+            cantidad_disponible: unidadesBase,
+            fecha_ingreso: new Date(),
+            fecha_vencimiento: detalle.fecha_vencimiento,
+            estado: 1,
+          },
+          { transaction }
+        );
+        idlote = lote.idlote;
+      }
 
       const almacen = await models.Almacen.findOne({
         where: {
@@ -204,10 +246,24 @@ const createCompraFtr = async (body) => {
           stock_nuevo: stockNuevo,
           referencia: compra._id,
           fecha: new Date(),
+          idlote,
+          idprodPresenta: detalle.idprodPresenta,
         },
         { transaction }
       );
     }
+
+    // Registrar pago inicial de la compra (mirror del Pago automático en ventas)
+    await models.PagoCompra.create(
+      {
+        idcompra: compra._id,
+        importe: totalCalculado,
+        idtipopago: body.pago?.idtipopago || 3,
+        estado: body.pago?.estado || "Pendiente",
+        fecha_pago: new Date(),
+      },
+      { transaction }
+    );
 
     await transaction.commit();
 
@@ -241,7 +297,9 @@ const updateCompraFtr = async (id, body) => {
 };
 
 /**
- * Anular compra: reversa de stock
+ * Anular compra: reversa de stock y, si el detalle generó un Lote, revierte
+ * también `cantidad_disponible` de ese Lote — a menos que ya haya sido
+ * parcialmente consumido por una venta, en cuyo caso no se puede anular.
  */
 const deleteCompraFtr = async (id) => {
   const transaction = await models.sequelize.transaction();
@@ -268,6 +326,24 @@ const deleteCompraFtr = async (id) => {
       });
 
       const unidadesARevertir = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
+      const lote = await models.Lote.findOne({
+        where: { idcompra_detalle: detalle._id },
+        transaction,
+      });
+
+      if (lote) {
+        if (Number(lote.cantidad_disponible) < unidadesARevertir) {
+          const error = new Error(
+            "No se puede anular: parte de este lote ya fue consumida por una venta"
+          );
+          error.status = 409;
+          error.code = "LOTE_PARCIALMENTE_CONSUMIDO";
+          throw error;
+        }
+        lote.cantidad_disponible = Number(lote.cantidad_disponible) - unidadesARevertir;
+        await lote.save({ transaction });
+      }
 
       const almacen = await models.Almacen.findOne({
         where: {
@@ -298,6 +374,8 @@ const deleteCompraFtr = async (id) => {
           stock_nuevo: stockNuevo,
           referencia: id,
           fecha: new Date(),
+          idlote: lote ? lote.idlote : null,
+          idprodPresenta: detalle.idprodPresenta,
         }, { transaction });
       }
     }
@@ -307,6 +385,40 @@ const deleteCompraFtr = async (id) => {
     await transaction.commit();
     return true;
 
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+};
+
+/**
+ * Registrar un pago (abono) sobre una compra existente. Soporta pagos
+ * parciales a proveedores — el saldo pendiente (cuentas por pagar) se
+ * deriva sumando los PagoCompra en `getCompraFtr`.
+ */
+const registrarPagoCompraFtr = async (idcompra, body = {}) => {
+  const transaction = await models.sequelize.transaction();
+  try {
+    const compra = await models.Compra.findByPk(idcompra, { transaction });
+    if (!compra) {
+      const error = new Error("Compra no encontrada");
+      error.status = 404;
+      throw error;
+    }
+
+    const pago = await models.PagoCompra.create(
+      {
+        idcompra,
+        importe: body.importe,
+        idtipopago: body.idtipopago,
+        estado: body.estado || "Pendiente",
+        fecha_pago: body.fecha_pago || new Date(),
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+    return pago;
   } catch (error) {
     await transaction.rollback();
     throw error;
@@ -327,5 +439,6 @@ module.exports = {
   createCompraFtr,
   updateCompraFtr,
   deleteCompraFtr,
+  registrarPagoCompraFtr,
   nextCodeFtr,
 };
