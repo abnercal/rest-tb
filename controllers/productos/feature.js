@@ -39,6 +39,10 @@ const getProductosFtr = async (req, query) => {
     distinct: true,
   };
 
+  if (search) {
+    findOptions.subQuery = false;
+  }
+
   if (hasPagination) {
     const page = parseInt(query.page) || 1;
     const limit = parseInt(query.limit) || 20;
