@@ -7,3 +7,4 @@ public/productos/
 # AI tooling artifacts
 .atl/
 /openspec/
+.claude
