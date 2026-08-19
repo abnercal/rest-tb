@@ -12,7 +12,7 @@ const getProductosCtrl = async (req, res) => {
 
 const getProductoCtrl = async (req, res) => {
   try {
-    const result = await feature.getProductoFtr(req, req.params.id);
+    const result = await feature.getProductoFtr(req, req.params.id, req.query);
     return successResponse(res, "Producto encontrado", result);
   } catch (error) {
     return errorResponse(res, error, "Error al obtener producto");

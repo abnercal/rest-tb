@@ -56,6 +56,10 @@ ProductoPresentacion.associate = (models) => {
     foreignKey: 'idpresentacion',
     as: 'Presentacion',
   });
+  ProductoPresentacion.hasMany(models.Precio, {
+    foreignKey: 'idprodPresenta',
+    as: 'Precios',
+  });
 };
 
 module.exports = ProductoPresentacion;

@@ -42,33 +42,56 @@ const getVentasFtr = async (query) => {
     }
   }
 
-  let findOptions = {
+  const FULL_INCLUDE = [
+    { model: models.Cliente, as: "Cliente" },
+    { model: models.EstadoOrden, as: "Estado" },
+    INCLUDE_DETALLE(),
+  ];
+
+  if (!hasPagination) {
+    const { count, rows } = await models.Orden.findAndCountAll({
+      where,
+      include: FULL_INCLUDE,
+      order: [["createdAt", "DESC"]],
+      distinct: true,
+      subQuery: false,
+    });
+    return { data: rows, meta: { total: count } };
+  }
+
+  const page = parseInt(query.page) || 1;
+  const limit = parseInt(query.limit) || 20;
+
+  // Paso 1: resolver qué IDs de orden entran en esta página, SIN el include
+  // hasMany (Detalles) de por medio. Con un hasMany en el include, LIMIT se
+  // aplica sobre las filas del JOIN (una por cada detalle), no sobre órdenes
+  // distintas: una orden con varios ítems "consume" varias posiciones del
+  // limit y terminan devolviéndose menos órdenes de las pedidas por página.
+  const { count, rows: idRows } = await models.Orden.findAndCountAll({
     where,
-    include: [
-      { model: models.Cliente, as: "Cliente" },
-      { model: models.EstadoOrden, as: "Estado" },
-      INCLUDE_DETALLE(),
-    ],
+    attributes: ["_id"],
+    include: [{ model: models.Cliente, as: "Cliente", attributes: [] }],
     order: [["createdAt", "DESC"]],
     distinct: true,
     subQuery: false,
-  };
+    limit,
+    offset: (page - 1) * limit,
+  });
 
-  if (hasPagination) {
-    const page = parseInt(query.page) || 1;
-    const limit = parseInt(query.limit) || 10;
-    findOptions.limit = limit;
-    findOptions.offset = (page - 1) * limit;
-
-    const { count, rows } = await models.Orden.findAndCountAll(findOptions);
-    return {
-      data: rows,
-      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
-    };
+  const totalPages = Math.ceil(count / limit);
+  if (idRows.length === 0) {
+    return { data: [], meta: { total: count, totalPages, currentPage: page, limit } };
   }
 
-  const { count, rows } = await models.Orden.findAndCountAll(findOptions);
-  return { data: rows, meta: { total: count } };
+  // Paso 2: traer esas órdenes completas (con Detalles) para los IDs de esta página
+  const ids = idRows.map((r) => r._id);
+  const rows = await models.Orden.findAll({
+    where: { _id: { [Op.in]: ids } },
+    include: FULL_INCLUDE,
+    order: [["createdAt", "DESC"]],
+  });
+
+  return { data: rows, meta: { total: count, totalPages, currentPage: page, limit } };
 };
 
 /**

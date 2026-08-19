@@ -40,32 +40,58 @@ const getUsuariosFtr = async (req, query = {}) => {
     ];
   }
 
-  let findOptions = {
-    where,
-    attributes: { exclude: EXCLUDE_FIELDS },
-    include: [
-      { model: models.Rol, as: "Roles", attributes: ["_id", "nombrerol"] },
-      { model: models.Sucursal, as: "Sucursal", attributes: ["idsucursal", "nombre"] },
-    ],
-    order: [["createdAt", "DESC"]],
-    distinct: true,
-  };
+  const FULL_INCLUDE = [
+    { model: models.Rol, as: "Roles", attributes: ["_id", "nombrerol"] },
+    { model: models.Sucursal, as: "Sucursal", attributes: ["idsucursal", "nombre"] },
+  ];
 
-  if (hasPagination) {
-    const page = parseInt(query.page) || 1;
-    const limit = parseInt(query.limit) || 10;
-    findOptions.limit = limit;
-    findOptions.offset = (page - 1) * limit;
-
-    const { count, rows } = await models.Usuario.findAndCountAll(findOptions);
-    return {
-      data: rows.map((u) => toDTO(req, u)),
-      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
-    };
+  if (!hasPagination) {
+    const { count, rows } = await models.Usuario.findAndCountAll({
+      where,
+      attributes: { exclude: EXCLUDE_FIELDS },
+      include: FULL_INCLUDE,
+      order: [["createdAt", "DESC"]],
+      distinct: true,
+    });
+    return { data: rows.map((u) => toDTO(req, u)), meta: { total: count } };
   }
 
-  const { count, rows } = await models.Usuario.findAndCountAll(findOptions);
-  return { data: rows.map((u) => toDTO(req, u)), meta: { total: count } };
+  const page = parseInt(query.page) || 1;
+  const limit = parseInt(query.limit) || 10;
+
+  // Paso 1: resolver qué IDs de usuario entran en esta página, SIN el include
+  // belongsToMany (Roles) de por medio — ver nota en getVentasFtr (controllers/ventas/feature.js).
+  // Con un to-many en el include, LIMIT se aplica sobre las filas del JOIN (una
+  // por cada rol), no sobre usuarios distintos: un usuario con varios roles
+  // "consume" varias posiciones del limit y terminan devolviéndose menos
+  // usuarios de los pedidos por página.
+  const { count, rows: idRows } = await models.Usuario.findAndCountAll({
+    where,
+    attributes: ["_id"],
+    order: [["createdAt", "DESC"]],
+    distinct: true,
+    limit,
+    offset: (page - 1) * limit,
+  });
+
+  const totalPages = Math.ceil(count / limit);
+  if (idRows.length === 0) {
+    return { data: [], meta: { total: count, totalPages, currentPage: page, limit } };
+  }
+
+  // Paso 2: traer esos usuarios completos (con Roles) para los IDs de esta página
+  const ids = idRows.map((r) => r._id);
+  const rows = await models.Usuario.findAll({
+    where: { _id: { [Op.in]: ids } },
+    attributes: { exclude: EXCLUDE_FIELDS },
+    include: FULL_INCLUDE,
+    order: [["createdAt", "DESC"]],
+  });
+
+  return {
+    data: rows.map((u) => toDTO(req, u)),
+    meta: { total: count, totalPages, currentPage: page, limit },
+  };
 };
 
 /**

@@ -10,30 +10,52 @@ const getRolesFtr = async (query) => {
     where[Op.or] = [{ nombrerol: { [Op.like]: `%${search}%` } }];
   }
 
-  let findOptions = {
-    where,
-    include: [
-      { model: models.Permiso, as: "Permisos", attributes: ["_id", "nombre"] },
-    ],
-    order: [["nombrerol", "ASC"]],
-    distinct: true,
-  };
+  const FULL_INCLUDE = [
+    { model: models.Permiso, as: "Permisos", attributes: ["_id", "nombre"] },
+  ];
 
-  if (hasPagination) {
-    const page = parseInt(query.page) || 1;
-    const limit = parseInt(query.limit) || 20;
-    findOptions.limit = limit;
-    findOptions.offset = (page - 1) * limit;
-
-    const { count, rows } = await models.Rol.findAndCountAll(findOptions);
-    return {
-      data: rows,
-      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
-    };
+  if (!hasPagination) {
+    const { count, rows } = await models.Rol.findAndCountAll({
+      where,
+      include: FULL_INCLUDE,
+      order: [["nombrerol", "ASC"]],
+      distinct: true,
+    });
+    return { data: rows, meta: { total: count } };
   }
 
-  const { count, rows } = await models.Rol.findAndCountAll(findOptions);
-  return { data: rows, meta: { total: count } };
+  const page = parseInt(query.page) || 1;
+  const limit = parseInt(query.limit) || 20;
+
+  // Paso 1: resolver qué IDs de rol entran en esta página, SIN el include
+  // belongsToMany (Permisos) de por medio — ver nota en getVentasFtr (controllers/ventas/feature.js).
+  // Con un to-many en el include, LIMIT se aplica sobre las filas del JOIN (una
+  // por cada permiso), no sobre roles distintos: un rol con varios permisos
+  // "consume" varias posiciones del limit y terminan devolviéndose menos
+  // roles de los pedidos por página.
+  const { count, rows: idRows } = await models.Rol.findAndCountAll({
+    where,
+    attributes: ["_id"],
+    order: [["nombrerol", "ASC"]],
+    distinct: true,
+    limit,
+    offset: (page - 1) * limit,
+  });
+
+  const totalPages = Math.ceil(count / limit);
+  if (idRows.length === 0) {
+    return { data: [], meta: { total: count, totalPages, currentPage: page, limit } };
+  }
+
+  // Paso 2: traer esos roles completos (con Permisos) para los IDs de esta página
+  const ids = idRows.map((r) => r._id);
+  const rows = await models.Rol.findAll({
+    where: { _id: { [Op.in]: ids } },
+    include: FULL_INCLUDE,
+    order: [["nombrerol", "ASC"]],
+  });
+
+  return { data: rows, meta: { total: count, totalPages, currentPage: page, limit } };
 };
 
 const getRolFtr = async (id) => {

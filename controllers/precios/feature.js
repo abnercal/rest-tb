@@ -77,7 +77,7 @@ const updatePrecioFtr = async (id, body) => {
 
 const deletePrecioFtr = async (id) => {
   const precio = await getPrecioFtr(id);
-  await precio.destroy();
+  await precio.update({ estado: 0 });
   return true;
 };
 

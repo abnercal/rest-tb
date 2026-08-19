@@ -698,7 +698,8 @@
                   "key": "presentaciones",
                   "type": "text",
                   "uuid": "f53dae65-566d-4d3f-a477-654bdca0c659",
-                  "value": "[{\"idpresentacion\":1,\"cantidad_base\":1,\"precio_venta\":50.00,\"codigo_barras\":\"7501234567890\"}]"
+                  "value": "[{\"idpresentacion\":1,\"cantidad_base\":1,\"precio_venta\":50.00,\"codigo_barras\":\"7501234567890\",\"precios\":[{\"idtipoCli\":1,\"precio\":45.00,\"tipoprecio\":\"mayorista\"},{\"idtipoCli\":2,\"precio\":50.00,\"tipoprecio\":\"minorista\"}]}]",
+                  "description": "\"precios\" es OPCIONAL por presentación. Si se omite, la presentación queda solo con precio_venta (precio único, sin distinción por tipo de cliente). idtipoCli debe existir en la tabla tipocli."
                 },
                 {
                   "key": "controla_vencimiento",
@@ -739,7 +740,20 @@
             "header": [],
             "body": {
               "mode": "formdata",
-              "formdata": []
+              "formdata": [
+                {
+                  "key": "nombre",
+                  "value": "Coca-Cola 2.5L",
+                  "type": "text",
+                  "description": "Cualquier campo del producto es opcional en el update; solo se actualiza lo que se envía."
+                },
+                {
+                  "key": "presentaciones",
+                  "type": "text",
+                  "value": "[{\"idpresentacion\":1,\"cantidad_base\":1,\"precio_venta\":55.00,\"precios\":[{\"idtipoCli\":1,\"precio\":48.00,\"tipoprecio\":\"mayorista\"}]},{\"idpresentacion\":2,\"cantidad_base\":12,\"precio_venta\":550.00}]",
+                  "description": "Ejemplo de los 3 comportamientos: (1) idpresentacion 1 trae solo idtipoCli=1 en \"precios\" -> ese precio se actualiza/crea, y cualquier otro idtipoCli que ya estuviera activo para esa presentación (ej. el 2 del alta) queda DESHABILITADO (estado=0), no borrado. (2) idpresentacion 2 NO manda \"precios\" -> sus precios existentes (si los hay) quedan intactos, solo se actualiza precio_venta/cantidad_base. (3) Una presentación que ya existía y no aparece en este array se deshabilita completa (estado=0 en producto_presentacion)."
+                }
+              ]
             },
             "url": {
               "raw": "localhost:8080/api/productos/4",

@@ -83,11 +83,13 @@ Producto.associate = (models) => {
   });
 } 
 
+const INCLUDE_PRECIOS = { association: 'Precios', where: { estado: 1 }, required: false, include: ['TipoCliente'] };
+
 Producto.findAllData  = function(options = {}){
   return Producto.findAll({
     include: [
       'Marca', 'Categoria', 'Unidad',
-      { association: 'Presentaciones', include: ['Presentacion'] },
+      { association: 'Presentaciones', include: ['Presentacion', INCLUDE_PRECIOS] },
     ],
     ...options,
   })
@@ -98,7 +100,7 @@ Producto.findOneData  = function(codigoprod){
     where: { codigoprod },
     include: [
       'Marca', 'Categoria', 'Unidad',
-      { association: 'Presentaciones', include: ['Presentacion'] },
+      { association: 'Presentaciones', include: ['Presentacion', INCLUDE_PRECIOS] },
     ],
   })
 }

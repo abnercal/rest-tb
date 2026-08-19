@@ -40,29 +40,52 @@ const getComprasFtr = async (query) => {
     }
   }
 
-  let findOptions = {
+  const FULL_INCLUDE = ["Proveedor", "Sucursal", "Usuario", INCLUDE_DETALLE()];
+
+  if (!hasPagination) {
+    const { count, rows } = await models.Compra.findAndCountAll({
+      where,
+      include: FULL_INCLUDE,
+      order: [["createdAt", "DESC"]],
+      distinct: true,
+      subQuery: false,
+    });
+    return { data: rows, meta: { total: count } };
+  }
+
+  const page = parseInt(query.page) || 1;
+  const limit = parseInt(query.limit) || 10;
+
+  // Paso 1: resolver qué IDs de compra entran en esta página, SIN el include
+  // hasMany (Detalles) de por medio. Con un hasMany en el include, LIMIT se
+  // aplica sobre las filas del JOIN (una por cada detalle), no sobre compras
+  // distintas: una compra con varios ítems "consume" varias posiciones del
+  // limit y terminan devolviéndose menos compras de las pedidas por página.
+  const { count, rows: idRows } = await models.Compra.findAndCountAll({
     where,
-    include: ["Proveedor", "Sucursal", "Usuario", INCLUDE_DETALLE()],
+    attributes: ["_id"],
+    include: [{ model: models.Proveedor, as: "Proveedor", attributes: [] }],
     order: [["createdAt", "DESC"]],
     distinct: true,
     subQuery: false,
-  };
+    limit,
+    offset: (page - 1) * limit,
+  });
 
-  if (hasPagination) {
-    const page = parseInt(query.page) || 1;
-    const limit = parseInt(query.limit) || 10;
-    findOptions.limit = limit;
-    findOptions.offset = (page - 1) * limit;
-
-    const { count, rows } = await models.Compra.findAndCountAll(findOptions);
-    return {
-      data: rows,
-      meta: { total: count, totalPages: Math.ceil(count / limit), currentPage: page, limit },
-    };
+  const totalPages = Math.ceil(count / limit);
+  if (idRows.length === 0) {
+    return { data: [], meta: { total: count, totalPages, currentPage: page, limit } };
   }
 
-  const { count, rows } = await models.Compra.findAndCountAll(findOptions);
-  return { data: rows, meta: { total: count } };
+  // Paso 2: traer esas compras completas (con Detalles) para los IDs de esta página
+  const ids = idRows.map((r) => r._id);
+  const rows = await models.Compra.findAll({
+    where: { _id: { [Op.in]: ids } },
+    include: FULL_INCLUDE,
+    order: [["createdAt", "DESC"]],
+  });
+
+  return { data: rows, meta: { total: count, totalPages, currentPage: page, limit } };
 };
 
 /**

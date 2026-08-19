@@ -3,8 +3,8 @@
  *
  * La lógica de resolución sigue este orden:
  * 1. Sin idtipoCli → devuelve precio_venta como fallback
- * 2. Con idtipoCli → busca precio específico vigente en la tabla precios
- * 3. Si no hay precio específico → devuelve precio_venta como fallback
+ * 2. Con idtipoCli → busca precio específico vigente y habilitado (estado=1) en precios
+ * 3. Si no hay precio específico (o está deshabilitado) → devuelve precio_venta como fallback
  * 4. Si la presentación no existe → error 404 PRECIO_NO_DISPONIBLE
  *
  * Sobre el precio base resuelto arriba, se aplica (si existe) un descuento
@@ -34,6 +34,7 @@ async function obtenerPrecioCorrecto(idprodPresenta, idtipoCli, cantidad = 1) {
       where: {
         idprodPresenta,
         idtipoCli,
+        estado: 1,
         [Op.and]: [
           { [Op.or]: [{ fechaefecto: { [Op.lte]: now } }, { fechaefecto: null }] },
           { [Op.or]: [{ fechafin: { [Op.gte]: now } }, { fechafin: null }] },
