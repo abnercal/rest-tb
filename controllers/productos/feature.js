@@ -63,7 +63,10 @@ const crearPreciosDePresentacion = async (idprodPresenta, precios, transaction) 
 // Solo se consideran los precios actualmente habilitados (estado=1) como
 // candidatos a actualizar/deshabilitar: uno ya deshabilitado antes no se toca.
 const sincronizarPreciosDePresentacion = async (idprodPresenta, precios, transaction) => {
-  if (!precios || precios.length === 0) return;
+  // "precios" vino explícito en el body (ver updateProductoFtr), así que un
+  // array vacío significa "el usuario quitó todos los precios" y debe
+  // deshabilitarlos, no ser tratado como "no tocar nada".
+  if (!precios) return;
 
   const activos = await models.Precio.findAll({
     where: { idprodPresenta, estado: 1 },
