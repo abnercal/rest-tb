@@ -39,7 +39,7 @@ const updateVentaCtrl = async (req, res) => {
 
 const deleteVentaCtrl = async (req, res) => {
   try {
-    await feature.deleteVentaFtr(req.params.id);
+    await feature.deleteVentaFtr(req.params.id, req.user?.id);
     return successResponse(res, "Venta eliminada");
   } catch (error) {
     return errorResponse(res, error, "Error al eliminar venta");
@@ -48,7 +48,7 @@ const deleteVentaCtrl = async (req, res) => {
 
 const convertirCotizacionCtrl = async (req, res) => {
   try {
-    const data = await feature.convertirCotizacionFtr(req.params.id, req.body);
+    const data = await feature.convertirCotizacionFtr(req.params.id, req.body, req.user?.id);
     return successResponse(res, "Cotización convertida a venta", data);
   } catch (error) {
     return errorResponse(res, error, "Error al convertir cotización");
@@ -57,7 +57,7 @@ const convertirCotizacionCtrl = async (req, res) => {
 
 const marcarEntregadaCtrl = async (req, res) => {
   try {
-    const data = await feature.marcarEntregadaFtr(req.params.id);
+    const data = await feature.marcarEntregadaFtr(req.params.id, req.user?.id);
     return successResponse(res, "Venta marcada como entregada", data);
   } catch (error) {
     return errorResponse(res, error, "Error al marcar venta como entregada");

@@ -24,4 +24,15 @@ async function getEstadoOrdenId(nombre) {
   return estado.idestado;
 }
 
-module.exports = { ESTADOS_ORDEN, getEstadoOrdenId };
+/**
+ * Resuelve el nombre de un estado a partir de su id — usado para armar el
+ * "estado_anterior" al registrar en bitácora, cuando solo tenemos el
+ * idestado actual de la orden (puede ser Confirmada o Entregada).
+ */
+async function getEstadoOrdenNombre(idestado) {
+  const models = require("../models/mysql");
+  const estado = await models.EstadoOrden.findByPk(idestado);
+  return estado ? estado.nombre : null;
+}
+
+module.exports = { ESTADOS_ORDEN, getEstadoOrdenId, getEstadoOrdenNombre };

@@ -41,7 +41,7 @@ const updateCompraCtrl = async (req, res) => {
 
 const deleteCompraCtrl = async (req, res) => {
   try {
-    await feature.deleteCompraFtr(req.params.id);
+    await feature.deleteCompraFtr(req.params.id, req.user?.id);
     return successResponse(res, "Compra eliminada");
   } catch (error) {
     return errorResponse(res, error, "Error al eliminar compra");

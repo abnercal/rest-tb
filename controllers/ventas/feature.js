@@ -2,7 +2,8 @@ const { Op } = require("sequelize");
 const moment = require("moment");
 const models = require("../../models/mysql");
 const { obtenerPrecioCorrecto } = require("../../helpers/precio-helper");
-const { ESTADOS_ORDEN, getEstadoOrdenId } = require("../../helpers/estado-orden-helper");
+const { ESTADOS_ORDEN, getEstadoOrdenId, getEstadoOrdenNombre } = require("../../helpers/estado-orden-helper");
+const { registrarCambioEstado, TIPOS_REGISTRO } = require("../../helpers/bitacora-helper");
 
 /**
  * Helper: include de detalle con presentación
@@ -366,6 +367,18 @@ const createVentaFtr = async (body) => {
       { transaction }
     );
 
+    await registrarCambioEstado(
+      {
+        tiporeg: TIPOS_REGISTRO.ORDEN,
+        idregistro: nuevaOrden._id,
+        estadoAnterior: null,
+        estadoNuevo: esCotizacion ? ESTADOS_ORDEN.COTIZACION : ESTADOS_ORDEN.CONFIRMADA,
+        codigoemp: ordenData.idusuario,
+        accion: esCotizacion ? "Cotización creada" : "Venta creada",
+      },
+      transaction
+    );
+
     // Crear detalles (siempre); descontar stock/kardex/lotes solo si NO es cotización
     for (const { detalle, pp } of detallesResueltos) {
       await models.OrdenDetalle.create(
@@ -425,7 +438,7 @@ const createVentaFtr = async (body) => {
  * negocio — una cotización es indicativa, no vinculante — y los precios o
  * descuentos pueden haber cambiado entre la cotización y la conversión.
  */
-const convertirCotizacionFtr = async (id, body = {}) => {
+const convertirCotizacionFtr = async (id, body = {}, idusuarioAccion = null) => {
   const transaction = await models.sequelize.transaction();
 
   try {
@@ -515,6 +528,18 @@ const convertirCotizacionFtr = async (id, body = {}) => {
     // creada directo (POS), porque ahí el despacho ya fue inmediato.
     await orden.update({ idestado: idConfirmada, total, fecha_conversion: new Date() }, { transaction });
 
+    await registrarCambioEstado(
+      {
+        tiporeg: TIPOS_REGISTRO.ORDEN,
+        idregistro: orden._id,
+        estadoAnterior: ESTADOS_ORDEN.COTIZACION,
+        estadoNuevo: ESTADOS_ORDEN.CONFIRMADA,
+        codigoemp: idusuarioAccion ?? orden.idusuario,
+        accion: "Cotización convertida a venta",
+      },
+      transaction
+    );
+
     if (body.pago) {
       await models.Pago.create(
         {
@@ -569,7 +594,7 @@ const updateVentaFtr = async (id, body) => {
  *   = id de la orden) — esto garantiza reversar exactamente lo que se tomó,
  *   y de exactamente qué lotes salió.
  */
-const deleteVentaFtr = async (id) => {
+const deleteVentaFtr = async (id, idusuarioAccion = null) => {
   const transaction = await models.sequelize.transaction();
 
   try {
@@ -583,9 +608,24 @@ const deleteVentaFtr = async (id) => {
       throw new Error("La venta ya está anulada");
     }
 
+    // Nombre del estado actual (Cotizacion/Confirmada/Entregada) ANTES de
+    // sobreescribirlo — lo necesitamos para el estado_anterior de la bitácora.
+    const nombreEstadoActual = await getEstadoOrdenNombre(orden.idestado);
+
     if (orden.idestado === idCotizacion) {
       // Una cotización nunca tocó el inventario: anular sin reversar stock
       await orden.update({ idestado: idAnulada }, { transaction });
+      await registrarCambioEstado(
+        {
+          tiporeg: TIPOS_REGISTRO.ORDEN,
+          idregistro: orden._id,
+          estadoAnterior: nombreEstadoActual,
+          estadoNuevo: ESTADOS_ORDEN.ANULADA,
+          codigoemp: idusuarioAccion ?? orden.idusuario,
+          accion: "Cotización anulada",
+        },
+        transaction
+      );
       await transaction.commit();
       return true;
     }
@@ -636,6 +676,18 @@ const deleteVentaFtr = async (id) => {
 
     await orden.update({ idestado: idAnulada }, { transaction });
 
+    await registrarCambioEstado(
+      {
+        tiporeg: TIPOS_REGISTRO.ORDEN,
+        idregistro: orden._id,
+        estadoAnterior: nombreEstadoActual,
+        estadoNuevo: ESTADOS_ORDEN.ANULADA,
+        codigoemp: idusuarioAccion ?? orden.idusuario,
+        accion: "Venta anulada",
+      },
+      transaction
+    );
+
     await transaction.commit();
     return true;
 
@@ -652,7 +704,7 @@ const deleteVentaFtr = async (id) => {
  * frontend no ofrece esta acción para esas, pero el backend no lo bloquea:
  * es una decisión de UI, no una regla de negocio dura.
  */
-const marcarEntregadaFtr = async (id) => {
+const marcarEntregadaFtr = async (id, idusuarioAccion = null) => {
   const transaction = await models.sequelize.transaction();
   try {
     const orden = await models.Orden.findByPk(id, { transaction });
@@ -672,6 +724,18 @@ const marcarEntregadaFtr = async (id) => {
 
     const idEntregada = await getEstadoOrdenId(ESTADOS_ORDEN.ENTREGADA);
     await orden.update({ idestado: idEntregada }, { transaction });
+
+    await registrarCambioEstado(
+      {
+        tiporeg: TIPOS_REGISTRO.ORDEN,
+        idregistro: orden._id,
+        estadoAnterior: ESTADOS_ORDEN.CONFIRMADA,
+        estadoNuevo: ESTADOS_ORDEN.ENTREGADA,
+        codigoemp: idusuarioAccion ?? orden.idusuario,
+        accion: "Venta marcada como entregada",
+      },
+      transaction
+    );
 
     await transaction.commit();
     return getVentaFtr(id);

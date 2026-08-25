@@ -1,6 +1,7 @@
 const { Op } = require("sequelize");
 const moment = require("moment");
 const models = require("../../models/mysql");
+const { registrarCambioEstado, TIPOS_REGISTRO } = require("../../helpers/bitacora-helper");
 
 /**
  * Helper: include de detalle con presentación
@@ -171,6 +172,18 @@ const createCompraFtr = async (body) => {
     // ✅ Crear compra
     const compra = await models.Compra.create(compraData, { transaction });
 
+    await registrarCambioEstado(
+      {
+        tiporeg: TIPOS_REGISTRO.COMPRA,
+        idregistro: compra._id,
+        estadoAnterior: null,
+        estadoNuevo: "Activa",
+        codigoemp: compraData.idusuario,
+        accion: "Compra creada",
+      },
+      transaction
+    );
+
     // ✅ Crear detalles + Lote (si aplica) + actualizar stock + kardex
     for (const detalle of detalles) {
       const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
@@ -324,7 +337,7 @@ const updateCompraFtr = async (id, body) => {
  * también `cantidad_disponible` de ese Lote — a menos que ya haya sido
  * parcialmente consumido por una venta, en cuyo caso no se puede anular.
  */
-const deleteCompraFtr = async (id) => {
+const deleteCompraFtr = async (id, idusuarioAccion = null) => {
   const transaction = await models.sequelize.transaction();
 
   try {
@@ -404,6 +417,18 @@ const deleteCompraFtr = async (id) => {
     }
 
     await compra.update({ estado: false }, { transaction });
+
+    await registrarCambioEstado(
+      {
+        tiporeg: TIPOS_REGISTRO.COMPRA,
+        idregistro: compra._id,
+        estadoAnterior: "Activa",
+        estadoNuevo: "Anulada",
+        codigoemp: idusuarioAccion ?? compra.idusuario,
+        accion: "Compra anulada",
+      },
+      transaction
+    );
 
     await transaction.commit();
     return true;
