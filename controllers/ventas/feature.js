@@ -4,6 +4,7 @@ const models = require("../../models/mysql");
 const { obtenerPrecioCorrecto } = require("../../helpers/precio-helper");
 const { ESTADOS_ORDEN, getEstadoOrdenId, getEstadoOrdenNombre } = require("../../helpers/estado-orden-helper");
 const { registrarCambioEstado, TIPOS_REGISTRO } = require("../../helpers/bitacora-helper");
+const { sucursalScope, assertMismaSucursal, esSuperadmin } = require("../../utils/scope");
 
 /**
  * Helper: include de detalle con presentación
@@ -22,11 +23,12 @@ const INCLUDE_DETALLE = () => ({
 /**
  * Listar órdenes/ventas con paginación y búsqueda
  */
-const getVentasFtr = async (query) => {
+const getVentasFtr = async (query, user) => {
   const search = query.search || "";
   const hasPagination = query.page !== undefined || query.limit !== undefined;
 
-  let where = {};
+  // Alcance por sucursal: no-superadmin solo ve las ventas de su sucursal.
+  let where = { ...sucursalScope(user) };
 
   if (search) {
     const parsedDate = moment(search, "YYYY-MM-DD", true);
@@ -100,7 +102,7 @@ const getVentasFtr = async (query) => {
  * Incluye tanto el `Pago` singular (compatibilidad con código existente)
  * como el `Pagos` plural (abonos/pagos parciales), y calcula `saldoPendiente`.
  */
-const getVentaFtr = async (id) => {
+const getVentaFtr = async (id, user) => {
   const orden = await models.Orden.findOne({
     where: { _id: id },
     include: [
@@ -117,6 +119,10 @@ const getVentaFtr = async (id) => {
     error.status = 404;
     throw error;
   }
+
+  // Alcance por sucursal. `user` solo llega desde el controller (getVentaCtrl);
+  // las llamadas internas post-escritura no lo pasan y saltean el chequeo.
+  assertMismaSucursal(orden, user);
 
   const ordenPlain = orden.toJSON();
   const totalPagado = (ordenPlain.Pagos || []).reduce(
@@ -262,11 +268,17 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
  *   pago: { idtipopago, estado }
  * }
  */
-const createVentaFtr = async (body) => {
+const createVentaFtr = async (body, user) => {
   const transaction = await models.sequelize.transaction();
 
   try {
     const { detalles = [], pago = {}, esCotizacion = false, idTipoCliVenta, ...ordenData } = body;
+
+    // Alcance por sucursal: un usuario no-superadmin siempre registra en SU
+    // sucursal; el idsucursal que venga en el body se ignora. El superadmin
+    // sí puede especificar la sucursal destino en el body.
+    const scope = sucursalScope(user);
+    if (scope.idsucursal !== undefined) ordenData.idsucursal = scope.idsucursal;
 
     // Auto-generar referencia si no se envió
     if (!ordenData.referencia) {
@@ -438,8 +450,9 @@ const createVentaFtr = async (body) => {
  * negocio — una cotización es indicativa, no vinculante — y los precios o
  * descuentos pueden haber cambiado entre la cotización y la conversión.
  */
-const convertirCotizacionFtr = async (id, body = {}, idusuarioAccion = null) => {
+const convertirCotizacionFtr = async (id, body = {}, user = null) => {
   const transaction = await models.sequelize.transaction();
+  const idusuarioAccion = user?.id ?? null;
 
   try {
     const orden = await models.Orden.findOne({
@@ -460,6 +473,8 @@ const convertirCotizacionFtr = async (id, body = {}, idusuarioAccion = null) => 
       error.status = 404;
       throw error;
     }
+
+    assertMismaSucursal(orden, user);
 
     const idCotizacion = await getEstadoOrdenId(ESTADOS_ORDEN.COTIZACION);
     const idConfirmada = await getEstadoOrdenId(ESTADOS_ORDEN.CONFIRMADA);
@@ -566,7 +581,7 @@ const convertirCotizacionFtr = async (id, body = {}, idusuarioAccion = null) => 
 /**
  * Actualizar encabezado de orden (sin modificar detalles ni stock)
  */
-const updateVentaFtr = async (id, body) => {
+const updateVentaFtr = async (id, body, user) => {
   const transaction = await models.sequelize.transaction();
   try {
     const orden = await models.Orden.findByPk(id);
@@ -575,6 +590,11 @@ const updateVentaFtr = async (id, body) => {
       error.status = 404;
       throw error;
     }
+
+    assertMismaSucursal(orden, user);
+    // Nadie salvo superadmin puede mover una venta de sucursal.
+    if (!esSuperadmin(user)) delete body.idsucursal;
+
     await orden.update(body, { transaction });
     await transaction.commit();
     return getVentaFtr(id);
@@ -594,12 +614,15 @@ const updateVentaFtr = async (id, body) => {
  *   = id de la orden) — esto garantiza reversar exactamente lo que se tomó,
  *   y de exactamente qué lotes salió.
  */
-const deleteVentaFtr = async (id, idusuarioAccion = null) => {
+const deleteVentaFtr = async (id, user = null) => {
   const transaction = await models.sequelize.transaction();
+  const idusuarioAccion = user?.id ?? null;
 
   try {
     const orden = await models.Orden.findByPk(id, { transaction });
     if (!orden) throw new Error("Venta no encontrada");
+
+    assertMismaSucursal(orden, user);
 
     const idAnulada = await getEstadoOrdenId(ESTADOS_ORDEN.ANULADA);
     const idCotizacion = await getEstadoOrdenId(ESTADOS_ORDEN.COTIZACION);
@@ -704,8 +727,9 @@ const deleteVentaFtr = async (id, idusuarioAccion = null) => {
  * frontend no ofrece esta acción para esas, pero el backend no lo bloquea:
  * es una decisión de UI, no una regla de negocio dura.
  */
-const marcarEntregadaFtr = async (id, idusuarioAccion = null) => {
+const marcarEntregadaFtr = async (id, user = null) => {
   const transaction = await models.sequelize.transaction();
+  const idusuarioAccion = user?.id ?? null;
   try {
     const orden = await models.Orden.findByPk(id, { transaction });
     if (!orden) {
@@ -713,6 +737,8 @@ const marcarEntregadaFtr = async (id, idusuarioAccion = null) => {
       error.status = 404;
       throw error;
     }
+
+    assertMismaSucursal(orden, user);
 
     const idConfirmada = await getEstadoOrdenId(ESTADOS_ORDEN.CONFIRMADA);
     if (orden.idestado !== idConfirmada) {
@@ -750,7 +776,7 @@ const marcarEntregadaFtr = async (id, idusuarioAccion = null) => {
  * parciales — la orden puede tener múltiples registros de Pago; el saldo
  * pendiente (cuentas por cobrar) se deriva sumándolos en `getVentaFtr`.
  */
-const registrarPagoFtr = async (idorden, body = {}) => {
+const registrarPagoFtr = async (idorden, body = {}, user = null) => {
   const transaction = await models.sequelize.transaction();
   try {
     const orden = await models.Orden.findByPk(idorden, { transaction });
@@ -759,6 +785,8 @@ const registrarPagoFtr = async (idorden, body = {}) => {
       error.status = 404;
       throw error;
     }
+
+    assertMismaSucursal(orden, user);
 
     const pago = await models.Pago.create(
       {

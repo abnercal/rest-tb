@@ -1,13 +1,17 @@
 const { Op } = require("sequelize");
 const db = require("../../models/mysql");
 const { successResponse, errorResponse } = require("../../utils/handleError");
+const { sucursalScope } = require("../../utils/scope");
 
 const getInventarioCtrl = async (req, res) => {
   try {
     const { sucursal, estado, search } = req.query;
 
-    const whereAlmacen = {};
-    if (sucursal) whereAlmacen.idsucursal = sucursal;
+    // Alcance por sucursal: un usuario no-superadmin solo ve la suya.
+    const scope = sucursalScope(req.user);
+    const whereAlmacen = { ...scope };
+    // Solo el superadmin (scope sin idsucursal) puede filtrar por una sucursal puntual.
+    if (scope.idsucursal === undefined && sucursal) whereAlmacen.idsucursal = sucursal;
 
     const almacenes = await db.Almacen.findAll({
       where: whereAlmacen,

@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require('cors');
 const {dbConnnectonMySql} = require("./db/connection");
 const db = require("../models/mysql");
+const { apiLimiter } = require("../middlewares/rateLimit");
 //cors permite proteger el servidor
 class Server {
     constructor() {
@@ -47,11 +48,21 @@ class Server {
     }
 
     middlewares() {
+        // Si la API corre detrás de un reverse proxy (nginx, caddy, load balancer),
+        // definir TRUST_PROXY en el .env (normalmente = 1, el primer salto) para que
+        // el rate limiter vea la IP real del cliente y no la del proxy.
+        if (process.env.TRUST_PROXY) {
+            this.app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1)
+        }
+
         //cors
         this.app.use( cors() )
 
         //Parseo y lectura del body
         this.app.use( express.json() )
+
+        //Rate limiting general de la API
+        this.app.use( '/api', apiLimiter )
 
         //Direccion publica
         this.app.use( express.static('public') )
