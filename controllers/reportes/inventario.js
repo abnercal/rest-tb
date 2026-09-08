@@ -43,6 +43,29 @@ const getInventarioCtrl = async (req, res) => {
       if (stock <= 0) estado = "sin_stock";
       else if (stock <= minimo) estado = "bajo";
 
+      const presentaciones = (p?.Presentaciones || []).map((pp) => ({
+        id: pp.idprodPresenta,
+        nombre: pp.Presentacion?.nombre || "",
+        cantidad_base: Number(pp.cantidad_base) || 1,
+        precio: Number(pp.precio_venta) || 0,
+      }));
+
+      // Desglose del stock por presentación. `stock` está en unidades base,
+      // así que cada presentación equivale a stock / cantidad_base.
+      // Se devuelve sin redondeo de presentación (4 decimales solo para
+      // evitar ruido de punto flotante); el front decide cómo mostrarlo.
+      const round4 = (n) => Math.round(n * 10000) / 10000;
+      const ordenadas = [...presentaciones].sort(
+        (x, y) => x.cantidad_base - y.cantidad_base
+      );
+      const stockDesglose = ordenadas.map((pp) => ({
+        id: pp.id,
+        presentacion: pp.nombre,
+        cantidad_base: pp.cantidad_base,
+        cantidad: round4(stock / (pp.cantidad_base || 1)),
+      }));
+      const stockBase = ordenadas[0]?.nombre || p?.Unidad?.nombre || "";
+
       return {
         idalmacen: a._id,
         idsucursal: a.idsucursal,
@@ -52,13 +75,10 @@ const getInventarioCtrl = async (req, res) => {
         marca: p?.Marca?.nombre || "",
         categoria: p?.Categoria?.nombre || "",
         unidad: p?.Unidad?.nombre || "",
-        presentaciones: (p?.Presentaciones || []).map((pp) => ({
-          id: pp.idprodPresenta,
-          nombre: pp.Presentacion?.nombre || "",
-          cantidad_base: Number(pp.cantidad_base) || 1,
-          precio: Number(pp.precio_venta) || 0,
-        })),
+        presentaciones,
         stock,
+        stock_base: stockBase,
+        stock_desglose: stockDesglose,
         stock_minimo: minimo,
         estado,
       };
@@ -79,7 +99,17 @@ const getInventarioCtrl = async (req, res) => {
       );
     }
 
-    return successResponse(res, "Reporte de inventario", data);
+    // Resumen para tarjetas KPI en el front (sobre el set ya filtrado).
+    const resumen = data.reduce(
+      (acc, d) => {
+        acc.total += 1;
+        acc[d.estado] = (acc[d.estado] || 0) + 1;
+        return acc;
+      },
+      { total: 0, normal: 0, bajo: 0, sin_stock: 0 }
+    );
+
+    return successResponse(res, "Reporte de inventario", data, resumen);
   } catch (error) {
     return errorResponse(res, error, "Error al generar reporte de inventario");
   }
