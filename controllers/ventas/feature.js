@@ -5,6 +5,7 @@ const { obtenerPrecioCorrecto } = require("../../helpers/precio-helper");
 const { ESTADOS_ORDEN, getEstadoOrdenId, getEstadoOrdenNombre } = require("../../helpers/estado-orden-helper");
 const { registrarCambioEstado, TIPOS_REGISTRO } = require("../../helpers/bitacora-helper");
 const { sucursalScope, assertMismaSucursal, esSuperadmin } = require("../../utils/scope");
+const { assertInvarianteLotes } = require("../../helpers/stock-helper");
 
 /**
  * Helper: include de detalle con presentación
@@ -152,8 +153,13 @@ const getVentaFtr = async (id, user) => {
 async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusuario, idorden, fecha, transaction }) {
   const unidadesADescontar = Number(cantidad) * Number(pp.cantidad_base);
 
+  // Lock pesimista (SELECT ... FOR UPDATE): la fila de Almacen queda bloqueada
+  // hasta el commit/rollback. Dos ventas simultáneas del mismo producto se
+  // serializan acá — la segunda espera y recién entonces lee el stock ya
+  // actualizado, así solo una puede vender la última unidad.
   const almacen = await models.Almacen.findOne({
     where: { codigoprod: pp.codigoprod, idsucursal },
+    lock: transaction.LOCK.UPDATE,
     transaction,
   });
 
@@ -164,21 +170,41 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
     throw error;
   }
 
+  // Validación de suficiencia BAJO lock. Antes vivía en un loop previo sin lock,
+  // lo que dejaba una ventana de carrera entre validar y descontar.
+  if (Number(almacen.stock) < unidadesADescontar) {
+    const error = new Error(`Stock insuficiente para: ${pp.Producto?.nombre}`);
+    error.status = 409;
+    error.code = "STOCK_INSUFICIENTE";
+    error.detalles = [
+      {
+        idprodPresenta: pp.idprodPresenta,
+        producto: pp.Producto?.nombre,
+        stockActual: Number(almacen.stock),
+        requerido: unidadesADescontar,
+      },
+    ];
+    throw error;
+  }
+
   // stockCorriente se usa solo para el bookkeeping stock_anterior/stock_nuevo del kardex;
   // Almacen.stock se persiste una sola vez al final con el valor final.
   let stockCorriente = Number(almacen.stock);
 
   if (pp.Producto?.controla_vencimiento) {
+    // Sin filtro cantidad_disponible > 0: se traen TODOS los lotes activos para
+    // poder verificar la invariante Almacen.stock == suma de lotes. El loop FEFO
+    // más abajo ya saltea los que tienen 0 (o menos) con `if (tomar <= 0) continue`.
     const lotes = await models.Lote.findAll({
-      where: {
-        codigoprod: pp.codigoprod,
-        idsucursal,
-        estado: 1,
-        cantidad_disponible: { [Op.gt]: 0 },
-      },
+      where: { codigoprod: pp.codigoprod, idsucursal, estado: 1 },
       order: [["fecha_vencimiento", "ASC"]],
+      lock: transaction.LOCK.UPDATE,
       transaction,
     });
+
+    // Invariante: para productos con lote, Almacen.stock debe cuadrar con la
+    // suma de lotes. Si no, el inventario está roto → abortar (no vender de más).
+    assertInvarianteLotes(pp.Producto?.nombre, almacen.stock, lotes);
 
     let remaining = unidadesADescontar;
 
@@ -343,30 +369,11 @@ const createVentaFtr = async (body, user) => {
       detallesResueltos.push({ detalle, pp });
     }
 
-    // Validar stock solo si NO es cotización — una cotización no compromete inventario
-    if (!esCotizacion) {
-      for (const { detalle, pp } of detallesResueltos) {
-        const unidadesADescontar = Number(detalle.cantidad) * Number(pp.cantidad_base);
-
-        const almacen = await models.Almacen.findOne({
-          where: { codigoprod: pp.codigoprod, idsucursal: ordenData.idsucursal },
-          transaction,
-        });
-
-        if (!almacen || Number(almacen.stock) < unidadesADescontar) {
-          const error = new Error(`Stock insuficiente para: ${pp.Producto?.nombre}`);
-          error.status = 409;
-          error.code = "STOCK_INSUFICIENTE";
-          error.detalles = [{
-            idprodPresenta: detalle.idprodPresenta,
-            producto: pp.Producto?.nombre,
-            stockActual: Number(almacen?.stock || 0),
-            requerido: unidadesADescontar
-          }];
-          throw error;
-        }
-      }
-    }
+    // La validación de stock vive dentro de `_descontarStockYRegistrarKardex`,
+    // bajo lock de fila, para no dejar una ventana de carrera entre validar y
+    // descontar. Se ordena por `codigoprod` para que todas las ventas tomen los
+    // locks en el mismo orden y no se produzcan deadlocks entre transacciones.
+    detallesResueltos.sort((a, b) => a.pp.codigoprod - b.pp.codigoprod);
 
     // Crear la orden (cotización o venta confirmada)
     const nuevaOrden = await models.Orden.create(
@@ -502,28 +509,9 @@ const convertirCotizacionFtr = async (id, body = {}, user = null) => {
       detallesResueltos.push({ detalle, pp });
     }
 
-    // Validar stock (misma regla que createVentaFtr)
-    for (const { detalle, pp } of detallesResueltos) {
-      const unidadesADescontar = Number(detalle.cantidad) * Number(pp.cantidad_base);
-
-      const almacen = await models.Almacen.findOne({
-        where: { codigoprod: pp.codigoprod, idsucursal: orden.idsucursal },
-        transaction,
-      });
-
-      if (!almacen || Number(almacen.stock) < unidadesADescontar) {
-        const error = new Error(`Stock insuficiente para: ${pp.Producto?.nombre}`);
-        error.status = 409;
-        error.code = "STOCK_INSUFICIENTE";
-        error.detalles = [{
-          idprodPresenta: detalle.idprodPresenta,
-          producto: pp.Producto?.nombre,
-          stockActual: Number(almacen?.stock || 0),
-          requerido: unidadesADescontar
-        }];
-        throw error;
-      }
-    }
+    // Validación de stock: dentro de `_descontarStockYRegistrarKardex`, bajo lock.
+    // Orden por `codigoprod` para tomar los locks siempre en el mismo orden.
+    detallesResueltos.sort((a, b) => a.pp.codigoprod - b.pp.codigoprod);
 
     // Descontar stock + kardex + lotes (misma lógica que una venta confirmada)
     for (const { detalle, pp } of detallesResueltos) {
@@ -661,6 +649,7 @@ const deleteVentaFtr = async (id, user = null) => {
     for (const k of kardexVenta) {
       const almacen = await models.Almacen.findOne({
         where: { codigoprod: k.codigoprod, idsucursal: k.idsucursal },
+        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
@@ -671,7 +660,7 @@ const deleteVentaFtr = async (id, user = null) => {
       await almacen.save({ transaction });
 
       if (k.idlote) {
-        const lote = await models.Lote.findByPk(k.idlote, { transaction });
+        const lote = await models.Lote.findByPk(k.idlote, { lock: transaction.LOCK.UPDATE, transaction });
         if (lote) {
           lote.cantidad_disponible = Number(lote.cantidad_disponible) + Number(k.cantidad);
           await lote.save({ transaction });

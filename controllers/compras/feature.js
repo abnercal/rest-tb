@@ -184,7 +184,8 @@ const createCompraFtr = async (body) => {
       transaction
     );
 
-    // ✅ Crear detalles + Lote (si aplica) + actualizar stock + kardex
+    // Paso 1: resolver la presentación de cada detalle y validar, SIN mutar nada.
+    const detallesResueltos = [];
     for (const detalle of detalles) {
       const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
         include: ["Producto"],
@@ -206,6 +207,15 @@ const createCompraFtr = async (body) => {
         throw error;
       }
 
+      detallesResueltos.push({ detalle, pp, controlaVencimiento });
+    }
+
+    // Orden estable por codigoprod: todas las compras/ventas toman los locks de
+    // Almacen en el mismo orden y no se producen deadlocks entre transacciones.
+    detallesResueltos.sort((a, b) => a.pp.codigoprod - b.pp.codigoprod);
+
+    // Paso 2: crear detalles + Lote (si aplica) + actualizar stock + kardex
+    for (const { detalle, pp, controlaVencimiento } of detallesResueltos) {
       const compraDetalle = await models.CompraDetalle.create(
         {
           cantidad: detalle.cantidad,
@@ -237,11 +247,16 @@ const createCompraFtr = async (body) => {
         idlote = lote.idlote;
       }
 
+      // Lock pesimista sobre la fila de Almacen (misma protección que en ventas):
+      // serializa el read-modify-write del stock contra ventas/compras concurrentes
+      // del mismo producto. Si la fila aún no existe, InnoDB toma un gap lock que
+      // también frena inserciones concurrentes en ese hueco.
       const almacen = await models.Almacen.findOne({
         where: {
           codigoprod: pp.codigoprod,
           idsucursal: compra.idsucursal,
         },
+        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
@@ -356,15 +371,24 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
       transaction,
     });
 
+    // Resolver la presentación de cada detalle y ordenar por codigoprod, para
+    // tomar los locks de Lote/Almacen en el mismo orden que el resto de
+    // transacciones y no producir deadlocks.
+    const detallesResueltos = [];
     for (const detalle of detalles) {
       const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
         transaction,
       });
+      detallesResueltos.push({ detalle, pp });
+    }
+    detallesResueltos.sort((a, b) => a.pp.codigoprod - b.pp.codigoprod);
 
+    for (const { detalle, pp } of detallesResueltos) {
       const unidadesARevertir = Number(detalle.cantidad) * Number(pp.cantidad_base);
 
       const lote = await models.Lote.findOne({
         where: { idcompra_detalle: detalle._id },
+        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
@@ -386,6 +410,7 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
           codigoprod: pp.codigoprod,
           idsucursal: compra.idsucursal,
         },
+        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
