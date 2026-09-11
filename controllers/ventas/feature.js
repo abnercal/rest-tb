@@ -164,16 +164,30 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
   });
 
   if (!almacen) {
-    const error = new Error(`No hay stock registrado para: ${pp.Producto?.nombre}`);
+    const error = new Error(`No hay stock registrado para: ${pp.Producto?.nombre} (se necesitan ${unidadesADescontar})`);
     error.status = 409;
     error.code = "STOCK_INSUFICIENTE";
+    error.detalles = [
+      {
+        idprodPresenta: pp.idprodPresenta,
+        producto: pp.Producto?.nombre,
+        stockActual: 0,
+        requerido: unidadesADescontar,
+      },
+    ];
     throw error;
   }
 
   // Validación de suficiencia BAJO lock. Antes vivía en un loop previo sin lock,
   // lo que dejaba una ventana de carrera entre validar y descontar.
   if (Number(almacen.stock) < unidadesADescontar) {
-    const error = new Error(`Stock insuficiente para: ${pp.Producto?.nombre}`);
+    // El mensaje lleva los números (no solo el producto) para que cualquier
+    // caller que solo lea `message` (Postman, logs, otro cliente) tenga la
+    // info completa sin depender de `detalles` — el frontend igual arma su
+    // propia redacción a partir de `detalles`, esto es la red de seguridad.
+    const error = new Error(
+      `Stock insuficiente para: ${pp.Producto?.nombre} (hay ${Number(almacen.stock)}, se necesitan ${unidadesADescontar})`
+    );
     error.status = 409;
     error.code = "STOCK_INSUFICIENTE";
     error.detalles = [
@@ -242,9 +256,19 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
 
     // Red de seguridad: Almacen y Lotes podrían teóricamente haberse desincronizado.
     if (remaining > 0) {
-      const error = new Error(`Stock insuficiente en lotes para: ${pp.Producto?.nombre}`);
+      const error = new Error(
+        `Stock insuficiente en lotes para: ${pp.Producto?.nombre} (faltan ${remaining} de ${unidadesADescontar} requeridas)`
+      );
       error.status = 409;
       error.code = "STOCK_INSUFICIENTE";
+      error.detalles = [
+        {
+          idprodPresenta: pp.idprodPresenta,
+          producto: pp.Producto?.nombre,
+          stockActual: unidadesADescontar - remaining,
+          requerido: unidadesADescontar,
+        },
+      ];
       throw error;
     }
   } else {
