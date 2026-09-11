@@ -21,6 +21,10 @@ const login = async ({ email, password }) => {
           },
         ],
       },
+      {
+        model: models.Sucursal,
+        as: "Sucursal",
+      },
     ],
   });
 
