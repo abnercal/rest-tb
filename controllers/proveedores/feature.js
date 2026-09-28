@@ -5,7 +5,8 @@ const getProveedoresFtr = async (query) => {
   const search = query.search || "";
   const hasPagination = query.page !== undefined || query.limit !== undefined;
 
-  let where = { estado: 1 };
+  // let where = { estado: 1 };
+  let where = {};
   if (search) {
     where[Op.or] = [
       { nombre: { [Op.like]: `%${search}%` } },
