@@ -34,6 +34,16 @@ const INCLUDE_DETALLE = () => ({
       association: "ProductoPresentacion",
       include: ["Producto", "Presentacion"],
     },
+    {
+      // Variante (talla/color) de la línea; null en productos sin variantes.
+      association: "Variante",
+      attributes: ["idvariante", "sku", "estado"],
+      required: false,
+      include: [
+        { association: "Talla", attributes: ["_id", "nombre", "tipo"], required: false },
+        { association: "Color", attributes: ["_id", "nombre", "hex"], required: false },
+      ],
+    },
   ],
 });
 
