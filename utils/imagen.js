@@ -17,11 +17,21 @@ const deleteImageFile = (imagePath) => {
   if (!imagePath) return;
 
   try {
-    // Quitar el "/" inicial si lo tiene para que path.join funcione bien
-    const relative = imagePath.startsWith('/') ? imagePath.slice(1) : imagePath;
-    const fullPath = path.join(process.cwd(), 'public', relative);
+    if (typeof imagePath !== 'string') return;
 
-    if (fs.existsSync(fullPath)) {
+    // Quitar el "/" inicial si lo tiene para que path.resolve no lo trate como absoluto
+    const relative = imagePath.startsWith('/') ? imagePath.slice(1) : imagePath;
+    const publicDir = path.resolve(process.cwd(), 'public');
+    const fullPath = path.resolve(publicDir, relative);
+
+    // Contención: solo se borran archivos DENTRO de public/. Un valor como
+    // "../.env" o una ruta absoluta resolvería fuera y se ignora.
+    if (!fullPath.startsWith(publicDir + path.sep)) {
+      console.error('[deleteImageFile] Ruta fuera de public/, se ignora:', imagePath);
+      return;
+    }
+
+    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
       fs.unlinkSync(fullPath);
     }
   } catch (err) {

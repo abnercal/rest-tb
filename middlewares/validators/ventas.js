@@ -1,5 +1,6 @@
 const { body } = require("express-validator");
 const validateResults = require("../../utils/validateResults");
+const { esIdEstricto } = require("../../utils/ids");
 
 const createVentaValidator = [
   // Opcional: si se omite, createVentaFtr usa el cliente genérico "Consumidor
@@ -31,6 +32,13 @@ const createVentaValidator = [
   body("detalles.*.precio")
     .notEmpty().withMessage("Cada detalle debe tener un precio")
     .isFloat({ min: 0 }).withMessage("El precio debe ser un número válido"),
+
+  // Opcional (null = sin variante). Estricto: un array/objeto/0/"" es 400, no se castea.
+  // Si es obligatorio u obligatoriamente ausente lo decide el controller según el
+  // producto (VARIANTE_REQUERIDA / VARIANTE_NO_PERMITIDA / VARIANTE_INVALIDA).
+  body("detalles.*.idvariante")
+    .optional({ values: "null" })
+    .custom(esIdEstricto).withMessage("idvariante debe ser un ID numérico"),
 
   body("nombre")
     .optional()

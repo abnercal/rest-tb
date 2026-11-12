@@ -51,6 +51,11 @@ const Lote = dbConnect.define('Lote', {
     field: 'idcompra_detalle',
     type: DataTypes.INTEGER,
     allowNull: false
+  },
+  idvariante: {
+    field: 'idvariante',
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'lote',

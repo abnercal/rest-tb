@@ -36,6 +36,11 @@ const Producto = dbConnect.define('Producto', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
+  idpublico: {
+    field: "idpublico",
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   estado: {
     field: "estado",
     type: DataTypes.INTEGER,
@@ -55,6 +60,12 @@ const Producto = dbConnect.define('Producto', {
   },
   controla_vencimiento: {
     field: "controla_vencimiento",
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: false
+  },
+  tiene_variantes: {
+    field: "tiene_variantes",
     type: DataTypes.BOOLEAN,
     allowNull: true,
     defaultValue: false

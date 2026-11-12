@@ -32,6 +32,11 @@ const CompraDetalle = dbConnect.define('CompraDetalle', {
     field:'idprodPresenta',
     type: DataTypes.INTEGER,
     allowNull: false
+  },
+  idvariante: {
+    field:'idvariante',
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'compra_detalle',

@@ -37,6 +37,16 @@ const PagoCompra = dbConnect.define('PagoCompra', {
     field: "idtipopago",
     type: DataTypes.INTEGER,
     allowNull: false
+  },
+  idsesion: {
+    field: "idsesion",
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  idusuario: {
+    field: "idusuario",
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'pagos_compra', // Nombre de la tabla en la base de datos

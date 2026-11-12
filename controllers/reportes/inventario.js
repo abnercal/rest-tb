@@ -31,9 +31,23 @@ const getInventarioCtrl = async (req, res) => {
           ],
         },
         { association: "Sucursal" },
+        // Una fila de Almacen por (sucursal, producto, variante). Variante/Talla/Color son
+        // belongsTo (1 fila por almacén): no multiplican filas, no afectan el orden ni el
+        // scope. Para productos sin variantes (idvariante NULL) el LEFT JOIN trae null.
+        {
+          association: "Variante",
+          required: false,
+          include: [
+            { association: "Talla", attributes: ["_id", "nombre", "tipo"], required: false },
+            { association: "Color", attributes: ["_id", "nombre", "hex"], required: false },
+          ],
+        },
       ],
       order: [
         ["stock", "ASC"],
+        // Desempate estable: variantes del mismo producto/sucursal con igual stock.
+        ["codigoprod", "ASC"],
+        ["idvariante", "ASC"],
       ],
     });
 
@@ -85,6 +99,18 @@ const getInventarioCtrl = async (req, res) => {
         stock_desglose: stockDesglose,
         stock_minimo: minimo,
         estado,
+        // Solo filas con variante: las de productos sin variantes conservan exactamente
+        // las claves de antes.
+        ...(a.idvariante != null && {
+          idvariante: a.idvariante,
+          sku: a.Variante?.sku ?? null,
+          talla: a.Variante?.Talla
+            ? { id: a.Variante.Talla._id, nombre: a.Variante.Talla.nombre, tipo: a.Variante.Talla.tipo }
+            : null,
+          color: a.Variante?.Color
+            ? { id: a.Variante.Color._id, nombre: a.Variante.Color.nombre, hex: a.Variante.Color.hex ?? null }
+            : null,
+        }),
       };
     });
 
@@ -99,7 +125,11 @@ const getInventarioCtrl = async (req, res) => {
         (d) =>
           d.producto.toLowerCase().includes(s) ||
           d.marca.toLowerCase().includes(s) ||
-          String(d.codigoprod).includes(s)
+          String(d.codigoprod).includes(s) ||
+          // Variantes: también se busca por SKU, talla y color (solo existen en filas con variante).
+          (d.sku || "").toLowerCase().includes(s) ||
+          (d.talla?.nombre || "").toLowerCase().includes(s) ||
+          (d.color?.nombre || "").toLowerCase().includes(s)
       );
     }
 

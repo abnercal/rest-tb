@@ -1,4 +1,5 @@
 const models = require("../models/mysql");
+const { whereStock } = require("./variante-helper");
 
 /** Tolerancia para comparar DECIMAL(18,2). */
 const EPS = 0.001;
@@ -35,6 +36,11 @@ const assertInvarianteLotes = (nombreProd, stockAlmacen, lotes) => {
  * productos con `controla_vencimiento = true` (para el resto no hay segunda
  * fuente de verdad: `Almacen.stock` es la única y no se toca).
  *
+ * La clave de comparación es (idsucursal, codigoprod, idvariante): cada fila de
+ * Almacen se compara solo con los lotes de SU variante. `idvariante` null = producto
+ * sin variantes (se consulta con IS NULL, nunca se omite el filtro: omitirlo sumaría
+ * los lotes de todas las variantes contra una sola fila de Almacen).
+ *
  * @param {object}  [opts]
  * @param {number}  [opts.codigoprod]      acotar a un producto
  * @param {number}  [opts.idsucursal]      acotar a una sucursal
@@ -67,7 +73,7 @@ const reconciliarStock = async ({ codigoprod, idsucursal, aplicar = false } = {}
     for (const a of almacenes) {
       const sumaLotes =
         (await models.Lote.sum("cantidad_disponible", {
-          where: { codigoprod: a.codigoprod, idsucursal: a.idsucursal, estado: 1 },
+          where: { ...whereStock({ codigoprod: a.codigoprod, idsucursal: a.idsucursal, idvariante: a.idvariante }), estado: 1 },
           transaction: t || undefined,
         })) || 0;
 
@@ -78,6 +84,7 @@ const reconciliarStock = async ({ codigoprod, idsucursal, aplicar = false } = {}
         descuadres.push({
           codigoprod: a.codigoprod,
           producto: a.Producto?.nombre,
+          idvariante: a.idvariante ?? null,
           idsucursal: a.idsucursal,
           stockAlmacen: stockActual,
           sumaLotes: Number(sumaLotes),

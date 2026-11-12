@@ -45,6 +45,10 @@ const PERMISOS = [
   "lotes:read",
   // Descuentos
   "descuentos:read", "descuentos:create", "descuentos:update", "descuentos:delete",
+  // Catálogos de variantes (talla / color / público objetivo)
+  "tallas:read", "tallas:create", "tallas:update", "tallas:delete",
+  "colores:read", "colores:create", "colores:update", "colores:delete",
+  "publicos:read", "publicos:create", "publicos:update", "publicos:delete",
 ];
 
 const PERMISOS_VENDEDOR = [
@@ -53,6 +57,24 @@ const PERMISOS_VENDEDOR = [
   "proveedores:read", "clientes:read", "ventas:read",
   "ventas:create", "clientes:create", "clientes:update",
   "precios:read",
+  "tallas:read", "colores:read", "publicos:read",
+];
+
+// Catálogos de variantes
+const PUBLICOS_OBJETIVO = ["Hombre", "Mujer", "Niño", "Niña", "Unisex"];
+
+const TALLAS_ROPA = ["XS", "S", "M", "L", "XL", "XXL"];
+const TALLAS_CALZADO = ["35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"];
+
+const COLORES = [
+  { nombre: "Negro",    hex: "#000000" },
+  { nombre: "Blanco",   hex: "#FFFFFF" },
+  { nombre: "Rojo",     hex: "#FF0000" },
+  { nombre: "Azul",     hex: "#0000FF" },
+  { nombre: "Verde",    hex: "#008000" },
+  { nombre: "Amarillo", hex: "#FFFF00" },
+  { nombre: "Gris",     hex: "#808080" },
+  { nombre: "Marrón",   hex: "#8B4513" },
 ];
 
 const MODULOS = [
@@ -67,6 +89,9 @@ const MODULOS = [
   { feature_key: 'unidades',       feature_label: 'Unidades',        permiso_nombre: 'unidades:read' },
   { feature_key: 'presentaciones', feature_label: 'Presentaciones',  permiso_nombre: 'presentaciones:read' },
   { feature_key: 'sucursales',     feature_label: 'Sucursales',      permiso_nombre: 'sucursales:read' },
+  { feature_key: 'tallas',         feature_label: 'Tallas',          permiso_nombre: 'tallas:read' },
+  { feature_key: 'colores',        feature_label: 'Colores',         permiso_nombre: 'colores:read' },
+  { feature_key: 'publicos',       feature_label: 'Público objetivo', permiso_nombre: 'publicos:read' },
   { feature_key: 'usuarios',       feature_label: 'Usuarios',        permiso_nombre: 'usuarios:read' },
   { feature_key: 'roles',          feature_label: 'Roles',           permiso_nombre: 'roles:read' },
   { feature_key: 'permisos',       feature_label: 'Permisos',        permiso_nombre: 'roles:read' },
@@ -161,6 +186,14 @@ async function runSeed() {
     );
     console.log("✅ Sucursal principal creada");
 
+    // Caja registradora por defecto de la sucursal principal
+    await db.Caja.findOrCreate({
+      where: { idsucursal: sucursal.idsucursal, nombre: "Caja 1" },
+      defaults: { estado: 1 },
+      transaction,
+    });
+    console.log("✅ Caja 1 creada en la sucursal principal");
+
     // ── 6. SUPERUSUARIO ──
     const salt = bcrypt.genSaltSync(10);
     const superUsuario = await db.Usuario.create(
@@ -191,12 +224,45 @@ async function runSeed() {
 
     await db.TipoPago.bulkCreate(
       [
-        { nombre: "Efectivo", estado: 1 },
-        { nombre: "Tarjeta", estado: 1 },
-        { nombre: "Transferencia", estado: 1 },
+        { nombre: "Efectivo", estado: 1, es_efectivo: 1 },
+        { nombre: "Tarjeta", estado: 1, es_efectivo: 0 },
+        { nombre: "Transferencia", estado: 1, es_efectivo: 0 },
       ],
       { transaction }
     );
+
+    // Catálogos de variantes: público objetivo, tallas y colores
+    for (const nombre of PUBLICOS_OBJETIVO) {
+      await db.PublicoObjetivo.findOrCreate({
+        where: { nombre },
+        defaults: { estado: 1 },
+        transaction,
+      });
+    }
+
+    for (const [i, nombre] of TALLAS_ROPA.entries()) {
+      await db.Talla.findOrCreate({
+        where: { nombre, tipo: "ROPA" },
+        defaults: { orden: i + 1, estado: 1 },
+        transaction,
+      });
+    }
+
+    for (const [i, nombre] of TALLAS_CALZADO.entries()) {
+      await db.Talla.findOrCreate({
+        where: { nombre, tipo: "CALZADO" },
+        defaults: { orden: i + 1, estado: 1 },
+        transaction,
+      });
+    }
+
+    for (const c of COLORES) {
+      await db.Color.findOrCreate({
+        where: { nombre: c.nombre },
+        defaults: { hex: c.hex, estado: 1 },
+        transaction,
+      });
+    }
 
     await db.EstadoOrden.bulkCreate(
       [

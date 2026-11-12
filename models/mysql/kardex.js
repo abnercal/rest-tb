@@ -52,6 +52,10 @@ const Kardex = dbConnect.define('Kardex', {
   idprodPresenta: {
     type: DataTypes.INTEGER,
     allowNull: false
+  },
+  idvariante: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'kardex',

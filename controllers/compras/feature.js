@@ -2,6 +2,20 @@ const { Op } = require("sequelize");
 const moment = require("moment");
 const models = require("../../models/mysql");
 const { registrarCambioEstado, TIPOS_REGISTRO } = require("../../helpers/bitacora-helper");
+const {
+  validarCoherenciaVariante,
+  compararClaveStock,
+  whereStock,
+  bloquearStock,
+  obtenerOCrearAlmacenBloqueado,
+  reintentarSiDeadlock,
+  advertenciasDeReversa,
+  agruparMovimientos,
+  errorDeNegocio,
+} = require("../../helpers/variante-helper");
+
+// Clave de stock (codigoprod, idvariante) de una línea ya resuelta.
+const claveLinea = (l) => ({ codigoprod: l.pp.codigoprod, idvariante: l.idvariante });
 
 /**
  * Helper: include de detalle con presentación
@@ -127,12 +141,22 @@ const getCompraFtr = async (id) => {
  * Body esperado:
  * {
  *   nombre, fecha, direccion, idproveedor, idusuario, idsucursal,
- *   detalles: [{ idprodPresenta, cantidad, costo, fecha_vencimiento? }],
+ *   detalles: [{ idprodPresenta, cantidad, costo, fecha_vencimiento?, idvariante? }],
  *   pago: { idtipopago, estado }
  * }
+ *
+ * `idvariante` (talla/color): OBLIGATORIO si el producto tiene_variantes
+ * (400 VARIANTE_REQUERIDA), PROHIBIDO si no (400 VARIANTE_NO_PERMITIDA); debe ser
+ * una variante ACTIVA de ESE producto (400 VARIANTE_INVALIDA). El detalle, el lote,
+ * el stock (Almacen) y el kardex llevan la variante.
  */
-const createCompraFtr = async (body) => {
+const createCompraFtr = (body) => reintentarSiDeadlock(() => _createCompraFtr(body));
+
+// Un intento = una transacción propia. Si falla por deadlock (1213) / lock timeout (1205) y NO
+// llegó a hacer commit, createCompraFtr lo reintenta con una transacción nueva (máx. 2 veces).
+const _createCompraFtr = async (body) => {
   const transaction = await models.sequelize.transaction();
+  let confirmada = false;
 
   try {
     const { detalles = [], ...compraData } = body;
@@ -168,6 +192,8 @@ const createCompraFtr = async (body) => {
     }, 0);
 
     compraData.total = totalCalculado;
+    // Una compra nueva siempre nace activa: con estado=false movería stock pero no se podría anular.
+    delete compraData.estado;
 
     // ✅ Crear compra
     const compra = await models.Compra.create(compraData, { transaction });
@@ -207,21 +233,36 @@ const createCompraFtr = async (body) => {
         throw error;
       }
 
-      detallesResueltos.push({ detalle, pp, controlaVencimiento });
+      // Variante: coherencia con el producto (REQUERIDA / NO_PERMITIDA). `idvariante`
+      // queda normalizado: null (sin variante) o número, nunca undefined.
+      const idvariante = validarCoherenciaVariante(pp.Producto, detalle.idvariante);
+
+      detallesResueltos.push({ detalle, pp, controlaVencimiento, idvariante });
     }
 
-    // Orden estable por codigoprod: todas las compras/ventas toman los locks de
-    // Almacen en el mismo orden y no se producen deadlocks entre transacciones.
-    detallesResueltos.sort((a, b) => a.pp.codigoprod - b.pp.codigoprod);
+    // Orden estable por (codigoprod, idvariante con NULL primero): todas las
+    // compras/ventas toman los locks en el mismo orden y no se producen deadlocks
+    // entre transacciones.
+    detallesResueltos.sort((a, b) => compararClaveStock(claveLinea(a), claveLinea(b)));
+
+    // Locks de producto (compartido) y de variante (exclusivo) ANTES de agregar stock, y
+    // validación con datos frescos de que la variante exista, sea del producto y esté
+    // ACTIVA. Es lo que cierra la carrera con "deshabilitar variante / cambiar
+    // tiene_variantes / eliminar producto" (controllers/productos/feature.js): esas
+    // operaciones toman el lock exclusivo del producto, así que o esperan a que esta
+    // compra termine (y entonces ven el stock nuevo y responden 409) o esta compra espera
+    // a que terminen (y entonces ve la variante ya deshabilitada y responde 400).
+    await bloquearStock(detallesResueltos.map(claveLinea), { validar: true, transaction });
 
     // Paso 2: crear detalles + Lote (si aplica) + actualizar stock + kardex
-    for (const { detalle, pp, controlaVencimiento } of detallesResueltos) {
+    for (const { detalle, pp, controlaVencimiento, idvariante } of detallesResueltos) {
       const compraDetalle = await models.CompraDetalle.create(
         {
           cantidad: detalle.cantidad,
           costo: detalle.costo,
           idcompra: compra._id,
           idprodPresenta: detalle.idprodPresenta,
+          idvariante,
         },
         { transaction }
       );
@@ -241,48 +282,38 @@ const createCompraFtr = async (body) => {
             fecha_ingreso: new Date(),
             fecha_vencimiento: detalle.fecha_vencimiento,
             estado: 1,
+            idvariante,
           },
           { transaction }
         );
         idlote = lote.idlote;
       }
 
-      // Lock pesimista sobre la fila de Almacen (misma protección que en ventas):
-      // serializa el read-modify-write del stock contra ventas/compras concurrentes
-      // del mismo producto. Si la fila aún no existe, InnoDB toma un gap lock que
-      // también frena inserciones concurrentes en ese hueco.
-      const almacen = await models.Almacen.findOne({
-        where: {
-          codigoprod: pp.codigoprod,
-          idsucursal: compra.idsucursal,
+      // Lock pesimista sobre la fila de Almacen de la clave (sucursal, producto, variante)
+      // (misma protección que en ventas): serializa el read-modify-write del stock contra
+      // ventas/compras concurrentes. Si la fila aún no existe se crea; si otra transacción
+      // la crea justo antes (UNIQUE sobre idvariante_key), se vuelve a leer con lock.
+      const { almacen, creado } = await obtenerOCrearAlmacenBloqueado({
+        codigoprod: pp.codigoprod,
+        idsucursal: compra.idsucursal,
+        idvariante,
+        valoresNuevos: {
+          stock: unidadesBase,
+          stock_minimo: Number(pp.Producto?.stock_minimo) || 0,
+          fecha: new Date(),
         },
-        lock: transaction.LOCK.UPDATE,
         transaction,
       });
 
       let stockAnterior = 0;
-      let stockNuevo = 0;
+      let stockNuevo = unidadesBase;
 
-      if (almacen) {
+      if (!creado) {
         stockAnterior = Number(almacen.stock);
         stockNuevo = stockAnterior + unidadesBase;
 
         almacen.stock = stockNuevo;
         await almacen.save({ transaction });
-      } else {
-        stockAnterior = 0;
-        stockNuevo = unidadesBase;
-
-        await models.Almacen.create(
-          {
-            codigoprod: pp.codigoprod,
-            idsucursal: compra.idsucursal,
-            stock: stockNuevo,
-            stock_minimo: Number(pp.Producto?.stock_minimo) || 0,
-            fecha: new Date(),
-          },
-          { transaction }
-        );
       }
 
       // REGISTRO EN KARDEX
@@ -299,6 +330,7 @@ const createCompraFtr = async (body) => {
           fecha: new Date(),
           idlote,
           idprodPresenta: detalle.idprodPresenta,
+          idvariante,
         },
         { transaction }
       );
@@ -317,10 +349,12 @@ const createCompraFtr = async (body) => {
     );
 
     await transaction.commit();
+    confirmada = true;
 
     return getCompraFtr(compra._id);
 
   } catch (error) {
+    if (confirmada) error.transaccionConfirmada = true; // nunca reintentar tras el commit
     await transaction.rollback();
     throw error;
   }
@@ -332,12 +366,38 @@ const createCompraFtr = async (body) => {
 const updateCompraFtr = async (id, body) => {
   const transaction = await models.sequelize.transaction();
   try {
-    const compra = await models.Compra.findByPk(id);
+    // Fila bloqueada (FOR UPDATE): el chequeo de "estado" de abajo se hace contra el estado vigente.
+    const compra = await models.Compra.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!compra) {
       const error = new Error("Compra no encontrada");
       error.status = 404;
       throw error;
     }
+
+    // estado: poner false equivale a anular SIN reversar el stock, y poner true sobre una compra
+    // anulada la "revive" SIN volver a sumarlo: ambos rompen el stock. La anulación va por
+    // DELETE /compras/:id. Enviar el MISMO estado es un no-op válido (el front reenvía el objeto
+    // completo) y se descarta para no pisar el estado.
+    if (body.estado !== undefined) {
+      const TRUE = [true, 1, "true", "1", "yes"];
+      const FALSE = [false, 0, "false", "0", "no"];
+      const pedido = TRUE.includes(body.estado) ? true : FALSE.includes(body.estado) ? false : null;
+      if (pedido !== null && pedido === Boolean(compra.estado)) {
+        delete body.estado;
+      } else {
+        throw errorDeNegocio(
+          400,
+          "El estado de una compra no se puede cambiar por este endpoint (afecta el stock): use POST /compras/anular/:id para anularla",
+          "ESTADO_NO_EDITABLE_POR_UPDATE",
+        );
+      }
+    }
+
+    // La sucursal y el total quedan fijos desde la creación: la anulación reversa el stock
+    // en compra.idsucursal, así que moverla dejaría el stock en una sucursal y reversarlo en otra.
+    delete body.idsucursal;
+    delete body.total;
+
     await compra.update(body, { transaction });
     await transaction.commit();
     return getCompraFtr(id);
@@ -356,7 +416,10 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
   const transaction = await models.sequelize.transaction();
 
   try {
-    const compra = await models.Compra.findByPk(id);
+    // Fila de la compra BLOQUEADA (y dentro de la transacción) antes de cualquier lock de stock
+    // (compra -> producto S -> variante X -> almacen X -> lote): dos anulaciones simultáneas se
+    // serializan acá y la segunda ve estado=false y falla, en vez de reversar el stock dos veces.
+    const compra = await models.Compra.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
 
     if (!compra) {
       throw new Error("Compra no encontrada");
@@ -379,12 +442,30 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
       const pp = await models.ProductoPresentacion.findByPk(detalle.idprodPresenta, {
         transaction,
       });
-      detallesResueltos.push({ detalle, pp });
+      // La variante sale del detalle guardado (no del request): se reversa exactamente
+      // la clave de stock que la compra afectó.
+      detallesResueltos.push({ detalle, pp, idvariante: detalle.idvariante ?? null });
     }
-    detallesResueltos.sort((a, b) => a.pp.codigoprod - b.pp.codigoprod);
+    detallesResueltos.sort((a, b) => compararClaveStock(claveLinea(a), claveLinea(b)));
 
-    for (const { detalle, pp } of detallesResueltos) {
+    // Locks de producto/variante primero (protocolo de helpers/variante-helper.js).
+    // Reversar NO exige variante activa: una compra ya registrada se puede anular aunque
+    // su variante se haya deshabilitado después.
+    const locks = {};
+    await bloquearStock(detallesResueltos.map(claveLinea), { validar: false, transaction, detalle: locks });
+    const movimientos = [];
+
+    for (const { detalle, pp, idvariante } of detallesResueltos) {
       const unidadesARevertir = Number(detalle.cantidad) * Number(pp.cantidad_base);
+
+      // Almacen ANTES que Lote: mismo orden que las ventas (almacen -> lotes). Con el orden
+      // inverso, una venta (almacen y luego lotes) y esta anulación (lote y luego almacen)
+      // se bloquean mutuamente; en productos sin variante no hay mutex de variante que lo evite.
+      const almacen = await models.Almacen.findOne({
+        where: whereStock({ codigoprod: pp.codigoprod, idsucursal: compra.idsucursal, idvariante }),
+        lock: transaction.LOCK.UPDATE,
+        transaction,
+      });
 
       const lote = await models.Lote.findOne({
         where: { idcompra_detalle: detalle._id },
@@ -405,15 +486,6 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
         await lote.save({ transaction });
       }
 
-      const almacen = await models.Almacen.findOne({
-        where: {
-          codigoprod: pp.codigoprod,
-          idsucursal: compra.idsucursal,
-        },
-        lock: transaction.LOCK.UPDATE,
-        transaction,
-      });
-
       if (almacen) {
         const stockAnterior = Number(almacen.stock);
         const stockNuevo = stockAnterior - unidadesARevertir;
@@ -424,6 +496,7 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
 
         almacen.stock = stockNuevo;
         await almacen.save({ transaction });
+        movimientos.push({ codigoprod: pp.codigoprod, idvariante, cantidad: unidadesARevertir, stockFinal: stockNuevo });
 
         await models.Kardex.create({
           codigoprod: pp.codigoprod,
@@ -437,6 +510,7 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
           fecha: new Date(),
           idlote: lote ? lote.idlote : null,
           idprodPresenta: detalle.idprodPresenta,
+          idvariante,
         }, { transaction });
       }
     }
@@ -455,8 +529,12 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
       transaction
     );
 
+    // Advertencias (aditivas): la reversa siempre se permite, pero si el stock descontado afecta una
+    // clave que ya no es vendible se avisa. Se evalúa con lo leído bajo los locks de arriba.
+    const advertencias = advertenciasDeReversa(agruparMovimientos(movimientos), locks, "descontaron");
+
     await transaction.commit();
-    return true;
+    return advertencias.length ? { advertencias } : true;
 
   } catch (error) {
     await transaction.rollback();

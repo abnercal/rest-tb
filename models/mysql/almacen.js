@@ -42,6 +42,14 @@ const Almacen = dbConnect.define('Almacen', {
     type: DataTypes.DECIMAL(18,2),
     allowNull: false,
     defaultValue: 0
+  },
+  // NULL = producto sin variantes. La columna idvariante_key de la tabla es
+  // STORED GENERATED (IFNULL(idvariante,0)) y respalda el UNIQUE uq_almacen_prod_suc_var;
+  // NO se declara aqui a proposito: Sequelize intentaria escribirla y MySQL falla.
+  idvariante: {
+    field:'idvariante',
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'almacen',

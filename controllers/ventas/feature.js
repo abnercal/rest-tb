@@ -6,6 +6,22 @@ const { ESTADOS_ORDEN, getEstadoOrdenId, getEstadoOrdenNombre } = require("../..
 const { registrarCambioEstado, TIPOS_REGISTRO } = require("../../helpers/bitacora-helper");
 const { sucursalScope, assertMismaSucursal, esSuperadmin } = require("../../utils/scope");
 const { assertInvarianteLotes } = require("../../helpers/stock-helper");
+const {
+  validarCoherenciaVariante,
+  compararClaveStock,
+  whereStock,
+  bloquearStock,
+  validarVariantesSinLock,
+  etiquetaDeStock,
+  reintentarSiDeadlock,
+  obtenerOCrearAlmacenBloqueado,
+  advertenciasDeReversa,
+  agruparMovimientos,
+  errorDeNegocio,
+} = require("../../helpers/variante-helper");
+
+// Clave de stock (codigoprod, idvariante) de una línea ya resuelta.
+const claveLinea = (l) => ({ codigoprod: l.pp.codigoprod, idvariante: l.idvariante });
 
 /**
  * Helper: include de detalle con presentación
@@ -147,34 +163,46 @@ const getVentaFtr = async (id, user) => {
  * de unidades descontadas — sigue siendo la única fuente de verdad para
  * el stock agregado; los Lotes son solo el desglose de qué lote lo cubrió.
  *
+ * La clave de stock es (idsucursal, codigoprod, idvariante): `idvariante` null =
+ * producto sin variantes (se consulta con IS NULL, nunca se omite el filtro).
+ * Los locks de producto/variante ya los tomó el caller (`bloquearStock`) en el
+ * orden del protocolo (ver helpers/variante-helper.js).
+ *
  * Reutilizado tanto por `createVentaFtr` (venta confirmada) como por
  * `convertirCotizacionFtr` (cotización que se convierte en venta).
  */
-async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusuario, idorden, fecha, transaction }) {
+async function _descontarStockYRegistrarKardex({ pp, cantidad, idvariante = null, idsucursal, idusuario, idorden, fecha, transaction }) {
   const unidadesADescontar = Number(cantidad) * Number(pp.cantidad_base);
+
+  // Detalle de error: idvariante/variante solo se agregan para productos con variantes
+  // (la forma para productos sin variantes no cambia).
+  const detalleError = async (stockActual) => ({
+    idprodPresenta: pp.idprodPresenta,
+    producto: pp.Producto?.nombre,
+    ...(idvariante !== null && {
+      idvariante,
+      variante: await etiquetaDeStock(pp.Producto?.nombre, idvariante, transaction),
+    }),
+    stockActual,
+    requerido: unidadesADescontar,
+  });
 
   // Lock pesimista (SELECT ... FOR UPDATE): la fila de Almacen queda bloqueada
   // hasta el commit/rollback. Dos ventas simultáneas del mismo producto se
   // serializan acá — la segunda espera y recién entonces lee el stock ya
   // actualizado, así solo una puede vender la última unidad.
   const almacen = await models.Almacen.findOne({
-    where: { codigoprod: pp.codigoprod, idsucursal },
+    where: whereStock({ codigoprod: pp.codigoprod, idsucursal, idvariante }),
     lock: transaction.LOCK.UPDATE,
     transaction,
   });
 
   if (!almacen) {
-    const error = new Error(`No hay stock registrado para: ${pp.Producto?.nombre} (se necesitan ${unidadesADescontar})`);
+    const nombreItem = await etiquetaDeStock(pp.Producto?.nombre, idvariante, transaction);
+    const error = new Error(`No hay stock registrado para: ${nombreItem} (se necesitan ${unidadesADescontar})`);
     error.status = 409;
     error.code = "STOCK_INSUFICIENTE";
-    error.detalles = [
-      {
-        idprodPresenta: pp.idprodPresenta,
-        producto: pp.Producto?.nombre,
-        stockActual: 0,
-        requerido: unidadesADescontar,
-      },
-    ];
+    error.detalles = [await detalleError(0)];
     throw error;
   }
 
@@ -185,19 +213,13 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
     // caller que solo lea `message` (Postman, logs, otro cliente) tenga la
     // info completa sin depender de `detalles` — el frontend igual arma su
     // propia redacción a partir de `detalles`, esto es la red de seguridad.
+    const nombreItem = await etiquetaDeStock(pp.Producto?.nombre, idvariante, transaction);
     const error = new Error(
-      `Stock insuficiente para: ${pp.Producto?.nombre} (hay ${Number(almacen.stock)}, se necesitan ${unidadesADescontar})`
+      `Stock insuficiente para: ${nombreItem} (hay ${Number(almacen.stock)}, se necesitan ${unidadesADescontar})`
     );
     error.status = 409;
     error.code = "STOCK_INSUFICIENTE";
-    error.detalles = [
-      {
-        idprodPresenta: pp.idprodPresenta,
-        producto: pp.Producto?.nombre,
-        stockActual: Number(almacen.stock),
-        requerido: unidadesADescontar,
-      },
-    ];
+    error.detalles = [await detalleError(Number(almacen.stock))];
     throw error;
   }
 
@@ -210,7 +232,7 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
     // poder verificar la invariante Almacen.stock == suma de lotes. El loop FEFO
     // más abajo ya saltea los que tienen 0 (o menos) con `if (tomar <= 0) continue`.
     const lotes = await models.Lote.findAll({
-      where: { codigoprod: pp.codigoprod, idsucursal, estado: 1 },
+      where: { ...whereStock({ codigoprod: pp.codigoprod, idsucursal, idvariante }), estado: 1 },
       order: [["fecha_vencimiento", "ASC"]],
       lock: transaction.LOCK.UPDATE,
       transaction,
@@ -218,7 +240,7 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
 
     // Invariante: para productos con lote, Almacen.stock debe cuadrar con la
     // suma de lotes. Si no, el inventario está roto → abortar (no vender de más).
-    assertInvarianteLotes(pp.Producto?.nombre, almacen.stock, lotes);
+    assertInvarianteLotes(await etiquetaDeStock(pp.Producto?.nombre, idvariante, transaction), almacen.stock, lotes);
 
     let remaining = unidadesADescontar;
 
@@ -246,6 +268,7 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
           fecha,
           idlote: lote.idlote,
           idprodPresenta: pp.idprodPresenta,
+          idvariante,
         },
         { transaction }
       );
@@ -256,19 +279,13 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
 
     // Red de seguridad: Almacen y Lotes podrían teóricamente haberse desincronizado.
     if (remaining > 0) {
+      const nombreItem = await etiquetaDeStock(pp.Producto?.nombre, idvariante, transaction);
       const error = new Error(
-        `Stock insuficiente en lotes para: ${pp.Producto?.nombre} (faltan ${remaining} de ${unidadesADescontar} requeridas)`
+        `Stock insuficiente en lotes para: ${nombreItem} (faltan ${remaining} de ${unidadesADescontar} requeridas)`
       );
       error.status = 409;
       error.code = "STOCK_INSUFICIENTE";
-      error.detalles = [
-        {
-          idprodPresenta: pp.idprodPresenta,
-          producto: pp.Producto?.nombre,
-          stockActual: unidadesADescontar - remaining,
-          requerido: unidadesADescontar,
-        },
-      ];
+      error.detalles = [await detalleError(unidadesADescontar - remaining)];
       throw error;
     }
   } else {
@@ -287,6 +304,7 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
         fecha,
         idlote: null,
         idprodPresenta: pp.idprodPresenta,
+        idvariante,
       },
       { transaction }
     );
@@ -314,12 +332,22 @@ async function _descontarStockYRegistrarKardex({ pp, cantidad, idsucursal, idusu
  * {
  *   nombre, fecha, direccion, idcliente, idusuario, idsucursal,
  *   esCotizacion: boolean,
- *   detalles: [{ idprodPresenta, cantidad }],
+ *   detalles: [{ idprodPresenta, cantidad, idvariante? }],
  *   pago: { idtipopago, estado }
  * }
+ *
+ * `idvariante` (talla/color): OBLIGATORIO si el producto tiene_variantes
+ * (400 VARIANTE_REQUERIDA), PROHIBIDO si no (400 VARIANTE_NO_PERMITIDA); debe ser
+ * una variante activa de ESE producto (400 VARIANTE_INVALIDA). El stock, los
+ * lotes, el kardex y el detalle de la orden usan la clave (producto, variante).
  */
-const createVentaFtr = async (body, user) => {
+const createVentaFtr = (body, user) => reintentarSiDeadlock(() => _createVentaFtr(body, user));
+
+// Un intento = una transacción propia. Si falla por deadlock (1213) / lock timeout (1205) y NO
+// llegó a hacer commit, createVentaFtr lo reintenta con una transacción nueva (máx. 2 veces).
+const _createVentaFtr = async (body, user) => {
   const transaction = await models.sequelize.transaction();
+  let confirmada = false;
 
   try {
     const { detalles = [], pago = {}, esCotizacion = false, idTipoCliVenta, ...ordenData } = body;
@@ -386,18 +414,33 @@ const createVentaFtr = async (body, user) => {
         throw error;
       }
 
-      const precioResuelto = await obtenerPrecioCorrecto(detalle.idprodPresenta, idtipoCli, detalle.cantidad);
+      // Variante: coherencia con el producto (REQUERIDA / NO_PERMITIDA) antes de tocar nada.
+      // `idvariante` queda normalizado: null (sin variante) o número, nunca undefined.
+      const idvariante = validarCoherenciaVariante(pp.Producto, detalle.idvariante);
+
+      // El precio de la variante (si tiene uno propio) pisa al genérico; sin variante => comportamiento de siempre.
+      const precioResuelto = await obtenerPrecioCorrecto(detalle.idprodPresenta, idtipoCli, detalle.cantidad, idvariante);
       detalle.precio = precioResuelto.precio;
 
       total += Number(detalle.cantidad) * Number(detalle.precio);
-      detallesResueltos.push({ detalle, pp });
+      detallesResueltos.push({ detalle, pp, idvariante });
     }
 
     // La validación de stock vive dentro de `_descontarStockYRegistrarKardex`,
     // bajo lock de fila, para no dejar una ventana de carrera entre validar y
-    // descontar. Se ordena por `codigoprod` para que todas las ventas tomen los
-    // locks en el mismo orden y no se produzcan deadlocks entre transacciones.
-    detallesResueltos.sort((a, b) => a.pp.codigoprod - b.pp.codigoprod);
+    // descontar. Se ordena por (codigoprod, idvariante con NULL primero) para que
+    // todas las ventas tomen los locks en el mismo orden y no se produzcan
+    // deadlocks entre transacciones.
+    detallesResueltos.sort((a, b) => compararClaveStock(claveLinea(a), claveLinea(b)));
+
+    // Locks de producto/variante en el orden del protocolo (helpers/variante-helper.js) y
+    // validación de que cada variante exista, sea del producto y esté ACTIVA. Va antes de
+    // crear nada. Una cotización no mueve stock: se valida igual, pero sin locks.
+    if (esCotizacion) {
+      await validarVariantesSinLock(detallesResueltos.map(claveLinea), transaction);
+    } else {
+      await bloquearStock(detallesResueltos.map(claveLinea), { validar: true, transaction });
+    }
 
     // Crear la orden (cotización o venta confirmada)
     const nuevaOrden = await models.Orden.create(
@@ -423,13 +466,14 @@ const createVentaFtr = async (body, user) => {
     );
 
     // Crear detalles (siempre); descontar stock/kardex/lotes solo si NO es cotización
-    for (const { detalle, pp } of detallesResueltos) {
+    for (const { detalle, pp, idvariante } of detallesResueltos) {
       await models.OrdenDetalle.create(
         {
           cantidad: detalle.cantidad,
           precio: detalle.precio,
           idorden: nuevaOrden._id,
           idprodPresenta: detalle.idprodPresenta,
+          idvariante,
         },
         { transaction }
       );
@@ -438,6 +482,7 @@ const createVentaFtr = async (body, user) => {
         await _descontarStockYRegistrarKardex({
           pp,
           cantidad: detalle.cantidad,
+          idvariante,
           idsucursal: ordenData.idsucursal,
           idusuario: ordenData.idusuario,
           idorden: nuevaOrden._id,
@@ -462,10 +507,12 @@ const createVentaFtr = async (body, user) => {
     }
 
     await transaction.commit();
+    confirmada = true;
 
     return getVentaFtr(nuevaOrden._id);
 
   } catch (error) {
+    if (confirmada) error.transaccionConfirmada = true; // nunca reintentar tras el commit
     await transaction.rollback();
     throw error;
   }
@@ -486,6 +533,17 @@ const convertirCotizacionFtr = async (id, body = {}, user = null) => {
   const idusuarioAccion = user?.id ?? null;
 
   try {
+    // Lock de la FILA DE LA ORDEN antes que cualquier lock de stock (orden -> producto S ->
+    // variante X -> almacen X -> lote): dos conversiones simultáneas de la misma cotización (o una
+    // conversión contra una anulación) se serializan acá, y la segunda relee el estado ya cambiado.
+    // Va SOLA (sin include): un FOR UPDATE con JOIN bloquearía también cliente/detalles/producto.
+    const ordenBloqueada = await models.Orden.findOne({ where: { _id: id }, lock: transaction.LOCK.UPDATE, transaction });
+    if (!ordenBloqueada) {
+      const error = new Error("Venta no encontrada");
+      error.status = 404;
+      throw error;
+    }
+
     const orden = await models.Orden.findOne({
       where: { _id: id },
       include: [
@@ -525,23 +583,32 @@ const convertirCotizacionFtr = async (id, body = {}, user = null) => {
     for (const detalle of orden.Detalles) {
       const pp = detalle.ProductoPresentacion;
 
-      const precioResuelto = await obtenerPrecioCorrecto(detalle.idprodPresenta, idtipoCli, detalle.cantidad);
+      // La variante vino con el detalle de la cotización (puede ser null en cotizaciones
+      // previas a las variantes). Se re-valida: desde la cotización el producto pudo
+      // pasar a manejar variantes, o la variante pudo deshabilitarse (conversión = venta
+      // NUEVA, exige variante activa).
+      const idvariante = validarCoherenciaVariante(pp.Producto, detalle.idvariante);
+
+      // Se re-precia con la variante guardada en el detalle de la cotización (orden_detalle.idvariante).
+      const precioResuelto = await obtenerPrecioCorrecto(detalle.idprodPresenta, idtipoCli, detalle.cantidad, idvariante);
       detalle.precio = precioResuelto.precio;
       await detalle.save({ transaction });
 
       total += Number(detalle.cantidad) * Number(detalle.precio);
-      detallesResueltos.push({ detalle, pp });
+      detallesResueltos.push({ detalle, pp, idvariante });
     }
 
     // Validación de stock: dentro de `_descontarStockYRegistrarKardex`, bajo lock.
-    // Orden por `codigoprod` para tomar los locks siempre en el mismo orden.
-    detallesResueltos.sort((a, b) => a.pp.codigoprod - b.pp.codigoprod);
+    // Orden por (codigoprod, idvariante) para tomar los locks siempre en el mismo orden.
+    detallesResueltos.sort((a, b) => compararClaveStock(claveLinea(a), claveLinea(b)));
+    await bloquearStock(detallesResueltos.map(claveLinea), { validar: true, transaction });
 
     // Descontar stock + kardex + lotes (misma lógica que una venta confirmada)
-    for (const { detalle, pp } of detallesResueltos) {
+    for (const { detalle, pp, idvariante } of detallesResueltos) {
       await _descontarStockYRegistrarKardex({
         pp,
         cantidad: detalle.cantidad,
+        idvariante,
         idsucursal: orden.idsucursal,
         idusuario: orden.idusuario,
         idorden: orden._id,
@@ -596,7 +663,9 @@ const convertirCotizacionFtr = async (id, body = {}, user = null) => {
 const updateVentaFtr = async (id, body, user) => {
   const transaction = await models.sequelize.transaction();
   try {
-    const orden = await models.Orden.findByPk(id);
+    // Fila bloqueada (FOR UPDATE): el chequeo de idestado de abajo se hace contra el estado
+    // vigente, no contra uno que una anulación/conversión concurrente ya cambió.
+    const orden = await models.Orden.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!orden) {
       const error = new Error("Venta no encontrada");
       error.status = 404;
@@ -606,6 +675,29 @@ const updateVentaFtr = async (id, body, user) => {
     assertMismaSucursal(orden, user);
     // Nadie salvo superadmin puede mover una venta de sucursal.
     if (!esSuperadmin(user)) delete body.idsucursal;
+
+    // idestado: cambiar el estado por acá se saltea la lógica de stock (Cotización->Confirmada
+    // no descuenta, Confirmada->Anulada/Cotización no reversa, Anulada->Confirmada no vuelve a
+    // descontar). Solo Confirmada <-> Entregada es neutro para el stock. El resto va por sus
+    // endpoints (POST /:id/convertir, DELETE /:id). Enviar el MISMO idestado es un no-op válido
+    // (el front suele reenviar el objeto completo) y se descarta para no pisar el estado.
+    if (body.idestado !== undefined) {
+      if (Number(body.idestado) === Number(orden.idestado)) {
+        delete body.idestado;
+      } else {
+        const idConfirmada = await getEstadoOrdenId(ESTADOS_ORDEN.CONFIRMADA);
+        const idEntregada = await getEstadoOrdenId(ESTADOS_ORDEN.ENTREGADA);
+        const neutros = [Number(idConfirmada), Number(idEntregada)];
+        if (!neutros.includes(Number(orden.idestado)) || !neutros.includes(Number(body.idestado))) {
+          throw errorDeNegocio(
+            400,
+            "El estado de una venta no se puede cambiar por este endpoint (afecta el stock): " +
+              "use POST /ventas/:id/convertir para convertir una cotización o POST /ventas/anular/:id para anular",
+            "ESTADO_NO_EDITABLE_POR_UPDATE",
+          );
+        }
+      }
+    }
 
     await orden.update(body, { transaction });
     await transaction.commit();
@@ -631,7 +723,10 @@ const deleteVentaFtr = async (id, user = null) => {
   const idusuarioAccion = user?.id ?? null;
 
   try {
-    const orden = await models.Orden.findByPk(id, { transaction });
+    // Fila de la orden BLOQUEADA antes de cualquier lock de stock (orden -> producto S -> variante X
+    // -> almacen X -> lote): dos anulaciones simultáneas se serializan acá y la segunda ve el
+    // estado Anulada y falla ("La venta ya está anulada"), en vez de reversar el stock dos veces.
+    const orden = await models.Orden.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!orden) throw new Error("Venta no encontrada");
 
     assertMismaSucursal(orden, user);
@@ -670,15 +765,30 @@ const deleteVentaFtr = async (id, user = null) => {
       transaction,
     });
 
+    // Orden determinista (codigoprod, idvariante con NULL primero) y locks de
+    // producto/variante primero (protocolo de helpers/variante-helper.js). Reversar NO
+    // exige variante activa: una venta ya registrada se puede anular aunque su variante
+    // se haya deshabilitado después (la clave sale del idvariante guardado en el Kardex).
+    kardexVenta.sort(compararClaveStock);
+    const locks = {};
+    await bloquearStock(kardexVenta, { validar: false, transaction, detalle: locks });
+    const movimientos = [];
+
     for (const k of kardexVenta) {
-      const almacen = await models.Almacen.findOne({
-        where: { codigoprod: k.codigoprod, idsucursal: k.idsucursal },
-        lock: transaction.LOCK.UPDATE,
+      // Insert-primero + lock (mismo helper que las compras): si la fila de Almacen no existiera
+      // (borrada/nunca creada) NO se aborta con un TypeError: el kardex prueba que ese stock existió,
+      // así que se crea en 0 y se le restituye lo vendido. Con la fila existente el INSERT es un no-op.
+      const { almacen } = await obtenerOCrearAlmacenBloqueado({
+        codigoprod: k.codigoprod,
+        idsucursal: k.idsucursal,
+        idvariante: k.idvariante,
+        valoresNuevos: { stock: 0, stock_minimo: 0, fecha: new Date() },
         transaction,
       });
 
       const stockAnterior = Number(almacen.stock);
       const stockNuevo = stockAnterior + Number(k.cantidad);
+      movimientos.push({ codigoprod: k.codigoprod, idvariante: k.idvariante ?? null, cantidad: k.cantidad, stockFinal: stockNuevo });
 
       almacen.stock = stockNuevo;
       await almacen.save({ transaction });
@@ -705,6 +815,7 @@ const deleteVentaFtr = async (id, user = null) => {
           fecha: new Date(),
           idlote: k.idlote,
           idprodPresenta: k.idprodPresenta,
+          idvariante: k.idvariante ?? null,
         },
         { transaction }
       );
@@ -724,8 +835,12 @@ const deleteVentaFtr = async (id, user = null) => {
       transaction
     );
 
+    // Advertencias (aditivas): la reversa siempre se permite, pero si el stock restituido cae en una
+    // clave que ya no es vendible se avisa. Se evalúa con lo leído bajo los locks de arriba.
+    const advertencias = advertenciasDeReversa(agruparMovimientos(movimientos), locks, "restituyeron");
+
     await transaction.commit();
-    return true;
+    return advertencias.length ? { advertencias } : true;
 
   } catch (error) {
     await transaction.rollback();
@@ -744,7 +859,9 @@ const marcarEntregadaFtr = async (id, user = null) => {
   const transaction = await models.sequelize.transaction();
   const idusuarioAccion = user?.id ?? null;
   try {
-    const orden = await models.Orden.findByPk(id, { transaction });
+    // Fila bloqueada (FOR UPDATE): serializa contra anular/convertir, que ya la bloquean.
+    // Sin lock, una anulación concurrente podía ser pisada con Entregada y reversar dos veces.
+    const orden = await models.Orden.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!orden) {
       const error = new Error("Venta no encontrada");
       error.status = 404;

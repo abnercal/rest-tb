@@ -7,13 +7,26 @@
  * 3. Si no hay precio específico (o está deshabilitado) → devuelve precio_venta como fallback
  * 4. Si la presentación no existe → error 404 PRECIO_NO_DISPONIBLE
  *
+ * Variantes (talla/color): con `idvariante` el orden pasa a ser
+ *   precio(presentación + tipoCli + ESA variante)
+ *     → precio(presentación + tipoCli, genérico: idvariante NULL)
+ *     → precio_venta
+ * Un precio por variante es opcional y pisa al genérico solo para esa variante.
+ * Sin `idvariante` (null/undefined) el comportamiento es exactamente el anterior y
+ * la consulta filtra SIEMPRE `idvariante IS NULL`: una fila de variante jamás se
+ * filtra a una consulta sin variante ni a la de otra variante.
+ *
  * Sobre el precio base resuelto arriba, se aplica (si existe) un descuento
- * activo de la tabla `descuentos` que aplique para la cantidad solicitada.
+ * activo de la tabla `descuentos` que aplique para la cantidad solicitada
+ * (los descuentos no distinguen variantes).
  */
 const { Op } = require("sequelize");
 const models = require("../models/mysql");
+const { normalizarIdVariante } = require("./variante-helper");
 
-async function obtenerPrecioCorrecto(idprodPresenta, idtipoCli, cantidad = 1) {
+async function obtenerPrecioCorrecto(idprodPresenta, idtipoCli, cantidad = 1, idvariante = null) {
+  // null/undefined => sin variante; cualquier otra cosa debe ser un ID estricto (400 VARIANTE_INVALIDA).
+  const idvar = normalizarIdVariante(idvariante);
   const pp = await models.ProductoPresentacion.findByPk(idprodPresenta);
   if (!pp) {
     const err = new Error("Presentación no encontrada");
@@ -30,10 +43,12 @@ async function obtenerPrecioCorrecto(idprodPresenta, idtipoCli, cantidad = 1) {
   } else {
     // Buscar precio específico para esta presentación + tipo de cliente
     const now = new Date();
-    const precioEsp = await models.Precio.findOne({
+    // `idvariante` va SIEMPRE explícito (null => IS NULL, n => = n): nunca se omite el filtro.
+    const buscarPrecio = (idvarFila) => models.Precio.findOne({
       where: {
         idprodPresenta,
         idtipoCli,
+        idvariante: idvarFila,
         estado: 1,
         [Op.and]: [
           { [Op.or]: [{ fechaefecto: { [Op.lte]: now } }, { fechaefecto: null }] },
@@ -41,7 +56,16 @@ async function obtenerPrecioCorrecto(idprodPresenta, idtipoCli, cantidad = 1) {
         ],
       },
       order: [["idprecios", "DESC"]],
+      // Con variante: el precio propio solo vale si la variante está HABILITADA (INNER JOIN, sin consulta
+      // extra): una variante deshabilitada cae al precio genérico. Sin variante, la consulta es la de siempre.
+      ...(idvarFila !== null
+        ? { include: [{ association: "Variante", attributes: [], where: { estado: 1 }, required: true }] }
+        : {}),
     });
+
+    // 1) precio propio de la variante (solo si la línea tiene variante); 2) precio genérico
+    const precioVariante = idvar !== null ? await buscarPrecio(idvar) : null;
+    const precioEsp = precioVariante || (await buscarPrecio(null));
 
     precioResuelto = precioEsp
       ? {
@@ -49,7 +73,9 @@ async function obtenerPrecioCorrecto(idprodPresenta, idtipoCli, cantidad = 1) {
           tipoprecio: precioEsp.tipoprecio,
           fechaefecto: precioEsp.fechaefecto,
           fechafin: precioEsp.fechafin,
-          fuente: "precio_especifico",
+          // "precio_variante" (+ idvariante) solo aparece cuando ganó una fila propia de la variante
+          fuente: precioVariante ? "precio_variante" : "precio_especifico",
+          ...(precioVariante ? { idvariante: idvar } : {}),
         }
       // Fallback a precio_venta
       : { precio: Number(pp.precio_venta) || 0, fuente: "precio_venta", tipoprecio: null };

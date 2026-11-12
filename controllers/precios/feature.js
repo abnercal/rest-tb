@@ -1,6 +1,55 @@
 const { Op } = require("sequelize");
 const models = require("../../models/mysql");
 const { obtenerPrecioCorrecto } = require("../../helpers/precio-helper");
+const { esIdEstricto } = require("../../utils/ids");
+
+const errorDeNegocio = (status, message, code, detalles) => {
+  const error = new Error(message);
+  error.status = status;
+  if (code) error.code = code;
+  if (detalles) error.detalles = detalles;
+  return error;
+};
+
+// idvariante de un precio (CRUD suelto): undefined/null => null (precio genérico). Si viene, debe ser un
+// ID estricto de una variante de ESTE producto (el de la presentación) y el producto debe manejar variantes.
+// Con `exigirActiva` (precio nuevo o que cambia de variante) la variante debe estar habilitada.
+// Sin locks: acá es un INSERT/UPDATE suelto; el flujo con locks es el de productos (nested precios[]).
+const resolverVarianteDePrecio = async (idprodPresenta, idvarianteCrudo, exigirActiva) => {
+  if (idvarianteCrudo === undefined || idvarianteCrudo === null) return null;
+  if (!esIdEstricto(idvarianteCrudo)) {
+    throw errorDeNegocio(400, "idvariante debe ser un ID numérico", "PRECIO_VARIANTE_INVALIDA");
+  }
+  const idvariante = Number(idvarianteCrudo);
+  const pp = await models.ProductoPresentacion.findByPk(idprodPresenta, { include: ["Producto"] });
+  if (!pp) throw errorDeNegocio(404, "Producto presentación no encontrado");
+  if (!pp.Producto?.tiene_variantes) {
+    throw errorDeNegocio(
+      400,
+      "El producto no maneja variantes: el precio no puede indicar idvariante",
+      "PRECIO_VARIANTE_NO_PERMITIDA",
+      [{ codigoprod: pp.codigoprod, idvariante }],
+    );
+  }
+  const variante = await models.ProductoVariante.findOne({ where: { idvariante, codigoprod: pp.codigoprod } });
+  if (!variante) {
+    throw errorDeNegocio(
+      400,
+      `La variante ${idvariante} no existe o no pertenece al producto ${pp.codigoprod}`,
+      "PRECIO_VARIANTE_INVALIDA",
+      [{ codigoprod: pp.codigoprod, idvariante }],
+    );
+  }
+  if (exigirActiva && Number(variante.estado) !== 1) {
+    throw errorDeNegocio(
+      400,
+      `La variante ${idvariante} del producto ${pp.codigoprod} está deshabilitada`,
+      "PRECIO_VARIANTE_INVALIDA",
+      [{ codigoprod: pp.codigoprod, idvariante }],
+    );
+  }
+  return idvariante;
+};
 
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
@@ -66,12 +115,30 @@ const createPrecioFtr = async (body) => {
     throw error;
   }
 
-  return await models.Precio.create(body);
+  // Precio por variante (opcional): se valida y normaliza; sin la clave el alta es la de siempre.
+  const data = { ...body };
+  if (body.idvariante !== undefined) {
+    data.idvariante = await resolverVarianteDePrecio(body.idprodPresenta, body.idvariante, true);
+  }
+  return await models.Precio.create(data);
 };
 
 const updatePrecioFtr = async (id, body) => {
   const precio = await getPrecioFtr(id);
-  await precio.update(body);
+  const data = { ...body };
+  // La presentación y/o la variante cambian: el resultado final debe ser coherente (la variante
+  // debe ser del producto de la presentación final). Solo se exige variante activa si CAMBIA de variante.
+  if (body.idvariante !== undefined || body.idprodPresenta !== undefined) {
+    const idprodFinal = body.idprodPresenta !== undefined ? body.idprodPresenta : precio.idprodPresenta;
+    const idvarFinal = body.idvariante !== undefined ? body.idvariante : precio.idvariante;
+    // Number() para que "5" (texto) y 5 guardado no cuenten como cambio; un valor inválido (NaN) sí
+    // cuenta como cambio y lo rechaza resolverVarianteDePrecio con 400.
+    const cambiaVariante = body.idvariante !== undefined &&
+      (body.idvariante === null ? null : Number(body.idvariante)) !== (precio.idvariante ?? null);
+    const idvariante = await resolverVarianteDePrecio(idprodFinal, idvarFinal, cambiaVariante);
+    if (body.idvariante !== undefined) data.idvariante = idvariante;
+  }
+  await precio.update(data);
   return precio;
 };
 
@@ -83,8 +150,10 @@ const deletePrecioFtr = async (id) => {
 
 // ─── Endpoint de consulta rápida (by-presentacion) ──────────────────────────
 
-const getPrecioByPresentacionFtr = async (idprodPresenta, idtipoCli) => {
-  return await obtenerPrecioCorrecto(idprodPresenta, idtipoCli);
+// `idvariante` opcional: con él se resuelve variante -> genérico -> precio_venta (ver precio-helper).
+// Sin él, igual que siempre (solo precios genéricos).
+const getPrecioByPresentacionFtr = async (idprodPresenta, idtipoCli, idvariante = null) => {
+  return await obtenerPrecioCorrecto(idprodPresenta, idtipoCli, 1, idvariante);
 };
 
 // ─── Precios por producto (busca todas las presentaciones del producto) ────

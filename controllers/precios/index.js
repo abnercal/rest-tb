@@ -50,10 +50,11 @@ const deletePrecioCtrl = async (req, res) => {
 
 const getPrecioByPresentacionCtrl = async (req, res) => {
   try {
-    const { idtipoCli } = req.query;
+    const { idtipoCli, idvariante } = req.query;
     const result = await feature.getPrecioByPresentacionFtr(
       req.params.idprodPresenta,
-      idtipoCli
+      idtipoCli,
+      idvariante === "" ? null : idvariante
     );
     return successResponse(res, "Precio obtenido", result);
   } catch (error) {

@@ -32,6 +32,11 @@ const OrdenDetalle = dbConnect.define('OrdenDetalle', {
     field:'idprodPresenta',
     type: DataTypes.INTEGER,
     allowNull: false
+  },
+  idvariante: {
+    field:'idvariante',
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'orden_detalle',

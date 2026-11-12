@@ -22,6 +22,8 @@ const getLotesFtr = async (query = {}) => {
     ],
     order: [["fecha_vencimiento", "ASC"]],
   };
+  // Cada lote ahora trae la columna `idvariante` (null para productos sin variantes y para
+  // lotes anteriores a las variantes); no se agrega ningún include ni otra clave.
 
   if (hasPagination) {
     const page = parseInt(query.page) || 1;
@@ -67,6 +69,15 @@ const getLotesPorVencerFtr = async (query = {}) => {
         include: [{ association: "Marca" }, { association: "Unidad" }],
       },
       { model: models.Sucursal, as: "Sucursal" },
+      // belongsTo: no multiplica filas. Null para lotes de productos sin variantes.
+      {
+        association: "Variante",
+        required: false,
+        include: [
+          { association: "Talla", attributes: ["_id", "nombre", "tipo"], required: false },
+          { association: "Color", attributes: ["_id", "nombre", "hex"], required: false },
+        ],
+      },
     ],
   });
 
@@ -94,6 +105,17 @@ const getLotesPorVencerFtr = async (query = {}) => {
       fecha_vencimiento: l.fecha_vencimiento,
       dias_restantes: diasRestantes,
       urgencia,
+      // Solo lotes con variante: los de productos sin variantes conservan las mismas claves.
+      ...(l.idvariante != null && {
+        idvariante: l.idvariante,
+        sku: l.Variante?.sku ?? null,
+        talla: l.Variante?.Talla
+          ? { id: l.Variante.Talla._id, nombre: l.Variante.Talla.nombre, tipo: l.Variante.Talla.tipo }
+          : null,
+        color: l.Variante?.Color
+          ? { id: l.Variante.Color._id, nombre: l.Variante.Color.nombre, hex: l.Variante.Color.hex ?? null }
+          : null,
+      }),
     };
   });
 

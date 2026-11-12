@@ -5,6 +5,9 @@
  * que controlan vencimiento. Para el resto, `Almacen.stock` es la única fuente
  * de verdad y no hay nada que reconciliar.
  *
+ * La comparación es por clave de stock (sucursal, producto, variante): cada fila
+ * de Almacen contra los lotes de su misma variante (idvariante NULL = sin variantes).
+ *
  *   node scripts/reconciliar-stock.js                    → solo reporta descuadres
  *   node scripts/reconciliar-stock.js --aplicar          → además ajusta Almacen.stock = suma de lotes
  *   node scripts/reconciliar-stock.js --producto=4        → acota a un producto

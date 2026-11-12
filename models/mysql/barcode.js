@@ -29,6 +29,11 @@ const Barcode = dbConnect.define('Barcode', {
     type: DataTypes.INTEGER,
     allowNull: false
   },
+  idvariante: {
+    field:'idvariante',
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
 }, {
   tableName: 'prod_barcode',
   timestamps: false,

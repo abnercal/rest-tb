@@ -21,6 +21,12 @@ const TipoPago = dbConnect.define('TipoPago', {
     type: DataTypes.INTEGER,
     allowNull: true,
     defaultValue: 1
+  },
+  es_efectivo: {
+    field:'es_efectivo',
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
   }
 }, {
   tableName: 'tipo_pago', // Nombre de la tabla en la base de datos

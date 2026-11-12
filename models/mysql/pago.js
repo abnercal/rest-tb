@@ -35,7 +35,17 @@ const Pago = dbConnect.define('Pago', {
   },
   fecha_pago: {
     field: "fecha_pago",
-    type: DataTypes.DATE, 
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  idsesion: {
+    field: "idsesion",
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  idusuario: {
+    field: "idusuario",
+    type: DataTypes.INTEGER,
     allowNull: true
   }
 }, {

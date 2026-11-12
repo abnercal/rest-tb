@@ -41,8 +41,10 @@ const updateCompraCtrl = async (req, res) => {
 
 const deleteCompraCtrl = async (req, res) => {
   try {
-    await feature.deleteCompraFtr(req.params.id, req.user?.id);
-    return successResponse(res, "Compra eliminada");
+    const resultado = await feature.deleteCompraFtr(req.params.id, req.user?.id);
+    // data solo lleva `advertencias` cuando la anulación dejó stock en una clave no vendible;
+    // sin advertencias la respuesta es idéntica a la de siempre (data: null).
+    return successResponse(res, "Compra eliminada", resultado && resultado.advertencias ? { advertencias: resultado.advertencias } : null);
   } catch (error) {
     return errorResponse(res, error, "Error al eliminar compra");
   }

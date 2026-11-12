@@ -47,6 +47,11 @@ const Precio = dbConnect.define('Precio', {
     type: DataTypes.TINYINT(4),
     allowNull: true,
     defaultValue: 1
+  },
+  idvariante: {
+    field:'idvariante',
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'precios',

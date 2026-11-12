@@ -30,6 +30,10 @@ class Server {
             precios: '/api/precios',
             lotes: '/api/lotes',
             descuentos: '/api/descuentos',
+            tallas: '/api/tallas',
+            colores: '/api/colores',
+            publicos: '/api/publicos',
+            barcodes: '/api/barcodes',
         }
 
         //Conectar a base de datos
@@ -90,6 +94,10 @@ class Server {
         this.app.use(this.paths.precios, require('../routes/precios'))
         this.app.use(this.paths.lotes, require('../routes/lotes'))
         this.app.use(this.paths.descuentos, require('../routes/descuentos'))
+        this.app.use(this.paths.tallas, require('../routes/tallas'))
+        this.app.use(this.paths.colores, require('../routes/colores'))
+        this.app.use(this.paths.publicos, require('../routes/publicos'))
+        this.app.use(this.paths.barcodes, require('../routes/barcodes'))
         this.app.use('*',(req,res) => {
             res.status(404).json({
                 errors: {

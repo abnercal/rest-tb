@@ -39,7 +39,7 @@ const updateProductoCtrl = async (req, res) => {
 
 const deleteProductoCtrl = async (req, res) => {
   try {
-    await feature.deleteProductoFtr(req, req.params.id);
+    await feature.deleteProductoFtr(req.params.id);
     return successResponse(res, "Producto eliminado");
   } catch (error) {
     return errorResponse(res, error, "Error al eliminar producto");
