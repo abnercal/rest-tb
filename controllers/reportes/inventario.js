@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const db = require("../../models/mysql");
 const { successResponse, errorResponse } = require("../../utils/handleError");
 const { sucursalScope } = require("../../utils/scope");
+const { formatearStock, etiquetaVariante } = require("../../helpers/stock-formato-helper");
 
 const getInventarioCtrl = async (req, res) => {
   try {
@@ -84,6 +85,16 @@ const getInventarioCtrl = async (req, res) => {
       }));
       const stockBase = ordenadas[0]?.nombre || p?.Unidad?.nombre || "";
 
+      // Texto legible ("64 unidades (8 cajas)") y desglose entero por presentación. Aditivo: las claves
+      // anteriores (stock, stock_base, stock_desglose) no cambian. Solo presentaciones activas.
+      const { stock_texto, stock_detalle } = formatearStock({
+        stock,
+        unidad: p?.Unidad?.nombre,
+        presentaciones: (p?.Presentaciones || [])
+          .filter((pp) => Number(pp.estado) !== 0)
+          .map((pp) => ({ id: pp.idprodPresenta, nombre: pp.Presentacion?.nombre, cantidad_base: pp.cantidad_base })),
+      });
+
       return {
         idalmacen: a._id,
         idsucursal: a.idsucursal,
@@ -97,13 +108,21 @@ const getInventarioCtrl = async (req, res) => {
         stock,
         stock_base: stockBase,
         stock_desglose: stockDesglose,
+        stock_texto,
+        stock_detalle,
         stock_minimo: minimo,
         estado,
+        // Stock "suelto" (idvariante NULL) de un producto que hoy maneja variantes (p. ej. stock previo a
+        // convertirlo): no se puede vender, hay que reasignarlo. Solo aparece en esas filas.
+        ...(a.idvariante == null && p?.tiene_variantes && { stock_sin_variante: true }),
         // Solo filas con variante: las de productos sin variantes conservan exactamente
         // las claves de antes.
         ...(a.idvariante != null && {
           idvariante: a.idvariante,
           sku: a.Variante?.sku ?? null,
+          variante_texto: etiquetaVariante(a.Variante?.Talla, a.Variante?.Color),
+          // false = variante deshabilitada: ese stock existe pero no se puede vender (ver advertencias de anulación).
+          variante_activa: Number(a.Variante?.estado) === 1,
           talla: a.Variante?.Talla
             ? { id: a.Variante.Talla._id, nombre: a.Variante.Talla.nombre, tipo: a.Variante.Talla.tipo }
             : null,

@@ -1,7 +1,9 @@
-const { Op } = require("sequelize");
+const { Op, fn, col } = require("sequelize");
 const models = require("../../models/mysql");
 const { deleteImageFile } = require("../../utils/imagen");
 const { esIdEstricto } = require("../../utils/ids");
+const { esSuperadmin } = require("../../utils/scope");
+const { formatearStock, etiquetaVariante: etiquetaTallaColor } = require("../../helpers/stock-formato-helper");
 const { validarCodigoDePresentacionLibre } = require("../../helpers/barcode-helper");
 
 // Variantes (talla/color) del producto. En el listado solo se traen las activas;
@@ -781,6 +783,82 @@ const toDTO = (req, producto, idtipoCli = null) => {
   return data;
 };
 
+// ── Stock en el listado/detalle ────────────────────────────────────────────────
+// Alcance del stock: no-superadmin ve SOLO su sucursal (JWT); SUPERADMIN ve la suma de todas, o una
+// sola con ?idsucursal=. Devuelve un fragmento de `where` ({} = todas) o null cuando no se puede
+// determinar la sucursal (usuario sin sucursal): en ese caso el stock sale null, sin romper el listado.
+const resolverAlcanceStock = (user, query = {}) => {
+  if (esSuperadmin(user)) {
+    if (query.idsucursal !== undefined && query.idsucursal !== "") {
+      if (!esEnteroPositivo(query.idsucursal)) {
+        throw errorDeNegocio(400, "idsucursal debe ser un ID numérico");
+      }
+      return { idsucursal: Number(query.idsucursal) };
+    }
+    return {};
+  }
+  const idsucursal = user?.idsucursal;
+  return idsucursal === undefined || idsucursal === null ? null : { idsucursal };
+};
+
+const aCentavos = (valor) => Math.round(Number(valor || 0) * 100);
+
+// Agrega `stock` (unidades base, VENDIBLE) al producto y a cada variante del DTO:
+//  - producto sin variantes: filas de almacén con idvariante NULL;
+//  - producto con variantes: suma de variantes HABILITADAS (el stock de una variante deshabilitada
+//    o de filas sueltas sin variante no se puede vender, así que no cuenta para el cajero).
+// Es aditivo: no toca ninguna clave existente. Una sola consulta agrupada para toda la página.
+const adjuntarStock = async (dtos, alcance) => {
+  if (dtos.length === 0) return dtos;
+
+  if (alcance === null) {
+    for (const dto of dtos) {
+      dto.stock = null;
+      dto.stock_texto = null;
+      dto.variantes = dto.variantes.map((v) => ({ ...v, stock: null, stock_texto: null, variante_texto: etiquetaTallaColor(v.talla, v.color) }));
+    }
+    return dtos;
+  }
+
+  const filas = await models.Almacen.findAll({
+    where: { codigoprod: { [Op.in]: dtos.map((d) => d.codigoprod) }, ...alcance },
+    attributes: ["codigoprod", "idvariante", [fn("SUM", col("stock")), "total"]],
+    group: ["codigoprod", "idvariante"],
+    raw: true,
+  });
+  const centavos = new Map(); // "codigoprod:idvariante|" -> centavos
+  for (const f of filas) {
+    centavos.set(`${f.codigoprod}:${f.idvariante ?? ""}`, aCentavos(f.total));
+  }
+
+  for (const dto of dtos) {
+    // Texto legible ("64 unidades (8 cajas)"): la unidad base sale de la Unidad del producto y las
+    // equivalencias de sus presentaciones activas (si el listado filtra por idtipoCli, solo las que
+    // ese tipo de cliente puede comprar).
+    const unidad = dto.Unidad?.nombre;
+    const presentaciones = (dto.Presentaciones || [])
+      .filter((p) => Number(p.estado) !== 0)
+      .map((p) => ({ id: p.idprodPresenta, nombre: p.Presentacion?.nombre, cantidad_base: p.cantidad_base }));
+
+    dto.variantes = dto.variantes.map((v) => {
+      const stock = (centavos.get(`${dto.codigoprod}:${v.idvariante}`) ?? 0) / 100;
+      return {
+        ...v,
+        stock,
+        stock_texto: formatearStock({ stock, unidad, presentaciones }).stock_texto,
+        variante_texto: etiquetaTallaColor(v.talla, v.color),
+      };
+    });
+    dto.stock = dto.tiene_variantes
+      ? dto.variantes.filter((v) => Number(v.estado) === 1).reduce((s, v) => s + aCentavos(v.stock), 0) / 100
+      : (centavos.get(`${dto.codigoprod}:`) ?? 0) / 100;
+    const { stock_texto, stock_detalle } = formatearStock({ stock: dto.stock, unidad, presentaciones });
+    dto.stock_texto = stock_texto;
+    dto.stock_detalle = stock_detalle;
+  }
+  return dtos;
+};
+
 const getProductosFtr = async (req, query) => {
   const search = query.search || "";
   const hasPagination = query.page !== undefined || query.limit !== undefined;
@@ -791,6 +869,9 @@ const getProductosFtr = async (req, query) => {
   // Si no viene idtipoCli, el listado se comporta exactamente igual que antes.
   const idtipoCliRaw = query.idtipoCli !== undefined && query.idtipoCli !== "" ? parseInt(query.idtipoCli) : null;
   const idtipoCli = Number.isNaN(idtipoCliRaw) ? null : idtipoCliRaw;
+
+  // Validar idsucursal (si viene) antes de consultar nada: un valor inválido es un 400.
+  const alcanceStock = resolverAlcanceStock(req?.user, query);
 
   let where = { estado: 1 };
 
@@ -861,7 +942,8 @@ const getProductosFtr = async (req, query) => {
       order: [["nombre", "ASC"]],
       distinct: true,
     });
-    return { data: rows.map((p) => toDTO(req, p, idtipoCli)), meta: { total: count } };
+    const data = await adjuntarStock(rows.map((p) => toDTO(req, p, idtipoCli)), alcanceStock);
+    return { data, meta: { total: count } };
   }
 
   const page = parseInt(query.page) || 1;
@@ -896,7 +978,7 @@ const getProductosFtr = async (req, query) => {
   });
 
   return {
-    data: rows.map((p) => toDTO(req, p, idtipoCli)),
+    data: await adjuntarStock(rows.map((p) => toDTO(req, p, idtipoCli)), alcanceStock),
     meta: { total: count, totalPages, currentPage: page, limit },
   };
 };
@@ -913,7 +995,9 @@ const getProductoFtr = async (req, id, query = {}) => {
   }
   const idtipoCli = query.idtipoCli !== undefined && query.idtipoCli !== "" ? parseInt(query.idtipoCli) : null;
   // Si req es null (llamado internamente sin contexto HTTP) retornar el modelo puro
-  return req ? toDTO(req, producto, idtipoCli) : producto;
+  if (!req) return producto;
+  const [dto] = await adjuntarStock([toDTO(req, producto, idtipoCli)], resolverAlcanceStock(req.user, query));
+  return dto;
 };
 
 const createProductoFtr = async (req, body, file) => {
