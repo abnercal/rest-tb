@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const moment = require("moment");
 const models = require("../../models/mysql");
 const { registrarCambioEstado, TIPOS_REGISTRO } = require("../../helpers/bitacora-helper");
+const { atribuirPagoACaja, compensarAnulacion } = require("../../helpers/caja-helper");
 const {
   validarCoherenciaVariante,
   compararClaveStock,
@@ -160,16 +161,17 @@ const getCompraFtr = async (id) => {
  * una variante ACTIVA de ESE producto (400 VARIANTE_INVALIDA). El detalle, el lote,
  * el stock (Almacen) y el kardex llevan la variante.
  */
-const createCompraFtr = (body) => reintentarSiDeadlock(() => _createCompraFtr(body));
+const createCompraFtr = (body, user = null) => reintentarSiDeadlock(() => _createCompraFtr(body, user));
 
 // Un intento = una transacción propia. Si falla por deadlock (1213) / lock timeout (1205) y NO
 // llegó a hacer commit, createCompraFtr lo reintenta con una transacción nueva (máx. 2 veces).
-const _createCompraFtr = async (body) => {
+const _createCompraFtr = async (body, user = null) => {
   const transaction = await models.sequelize.transaction();
   let confirmada = false;
 
   try {
-    const { detalles = [], ...compraData } = body;
+    // idcaja (opcional): caja de la que sale un pago en efectivo "Pagado" (ver helpers/caja-helper.js)
+    const { detalles = [], idcaja, ...compraData } = body;
 
     // Auto-generar código si no se envió nombre
     if (!compraData.nombre) {
@@ -347,13 +349,27 @@ const _createCompraFtr = async (body) => {
     }
 
     // Registrar pago inicial de la compra (mirror del Pago automático en ventas)
+    const estadoPago = body.pago?.estado || "Pendiente";
+    const idtipopago = body.pago?.idtipopago || 3;
+
+    // Caja: un pago "Pagado" se asigna a la sesión abierta del usuario que paga. Va al FINAL de la
+    // transacción (la sesión es el último lock del orden: compra -> producto -> variante -> almacén -> lote -> sesión).
+    const atribucion = await atribuirPagoACaja(transaction, {
+      estado: estadoPago,
+      idtipopago,
+      user,
+      idsucursal: compra.idsucursal,
+      idcaja: idcaja ?? body.pago?.idcaja,
+    });
+
     await models.PagoCompra.create(
       {
         idcompra: compra._id,
         importe: totalCalculado,
-        idtipopago: body.pago?.idtipopago || 3,
-        estado: body.pago?.estado || "Pendiente",
+        idtipopago,
+        estado: estadoPago,
         fecha_pago: new Date(),
+        ...atribucion.campos,
       },
       { transaction }
     );
@@ -361,7 +377,8 @@ const _createCompraFtr = async (body) => {
     await transaction.commit();
     confirmada = true;
 
-    return getCompraFtr(compra._id);
+    const compraCreada = await getCompraFtr(compra._id);
+    return atribucion.advertencias.length ? { ...compraCreada, advertencias: atribucion.advertencias } : compraCreada;
 
   } catch (error) {
     if (confirmada) error.transaccionConfirmada = true; // nunca reintentar tras el commit
@@ -422,7 +439,7 @@ const updateCompraFtr = async (id, body) => {
  * también `cantidad_disponible` de ese Lote — a menos que ya haya sido
  * parcialmente consumido por una venta, en cuyo caso no se puede anular.
  */
-const deleteCompraFtr = async (id, idusuarioAccion = null) => {
+const deleteCompraFtr = async (id, idusuarioAccion = null, user = null, opciones = {}) => {
   const transaction = await models.sequelize.transaction();
 
   try {
@@ -539,9 +556,24 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
       transaction
     );
 
+    // Caja: si la compra tenía efectivo "Pagado" que salió de una sesión, se compensa con un INGRESO
+    // "DEVOLUCION COMPRA" en la sesión abierta ACTUAL del usuario (los pagos originales no se tocan:
+    // libro append-only). Va al final: la sesión es el último lock del orden.
+    const compensacion = await compensarAnulacion(transaction, {
+      tipo: "compra",
+      idreferencia: compra._id,
+      descripcion: `Anulación de compra ${compra.nombre || compra._id}`.slice(0, 255),
+      user,
+      idsucursal: compra.idsucursal,
+      idcaja: opciones?.idcaja,
+    });
+
     // Advertencias (aditivas): la reversa siempre se permite, pero si el stock descontado afecta una
     // clave que ya no es vendible se avisa. Se evalúa con lo leído bajo los locks de arriba.
-    const advertencias = advertenciasDeReversa(agruparMovimientos(movimientos), locks, "descontaron");
+    const advertencias = [
+      ...advertenciasDeReversa(agruparMovimientos(movimientos), locks, "descontaron"),
+      ...compensacion.advertencias,
+    ];
 
     await transaction.commit();
     return advertencias.length ? { advertencias } : true;
@@ -557,29 +589,44 @@ const deleteCompraFtr = async (id, idusuarioAccion = null) => {
  * parciales a proveedores — el saldo pendiente (cuentas por pagar) se
  * deriva sumando los PagoCompra en `getCompraFtr`.
  */
-const registrarPagoCompraFtr = async (idcompra, body = {}) => {
+const registrarPagoCompraFtr = async (idcompra, body = {}, user = null) => {
   const transaction = await models.sequelize.transaction();
   try {
-    const compra = await models.Compra.findByPk(idcompra, { transaction });
+    // PRIMER statement: fila de la compra bloqueada (FOR UPDATE), igual que anular. Orden de locks
+    // compra -> sesión: serializa el pago contra una anulación (que compensa en caja lo ya pagado) y evita el
+    // deadlock con el INSERT del PagoCompra (su FK pide S sobre la compra).
+    const compra = await models.Compra.findByPk(idcompra, { transaction, lock: transaction.LOCK.UPDATE });
     if (!compra) {
       const error = new Error("Compra no encontrada");
       error.status = 404;
       throw error;
     }
 
+    const estadoPago = body.estado || "Pendiente";
+
+    // Caja: el pago "Pagado" se asigna a la sesión abierta del usuario que paga (en este momento).
+    const atribucion = await atribuirPagoACaja(transaction, {
+      estado: estadoPago,
+      idtipopago: body.idtipopago,
+      user,
+      idsucursal: compra.idsucursal,
+      idcaja: body.idcaja,
+    });
+
     const pago = await models.PagoCompra.create(
       {
         idcompra,
         importe: body.importe,
         idtipopago: body.idtipopago,
-        estado: body.estado || "Pendiente",
+        estado: estadoPago,
         fecha_pago: body.fecha_pago || new Date(),
+        ...atribucion.campos,
       },
       { transaction }
     );
 
     await transaction.commit();
-    return pago;
+    return atribucion.advertencias.length ? { ...pago.toJSON(), advertencias: atribucion.advertencias } : pago;
   } catch (error) {
     await transaction.rollback();
     throw error;

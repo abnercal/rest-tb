@@ -6,6 +6,7 @@ const { ESTADOS_ORDEN, getEstadoOrdenId, getEstadoOrdenNombre } = require("../..
 const { registrarCambioEstado, TIPOS_REGISTRO } = require("../../helpers/bitacora-helper");
 const { sucursalScope, assertMismaSucursal, esSuperadmin } = require("../../utils/scope");
 const { assertInvarianteLotes } = require("../../helpers/stock-helper");
+const { atribuirPagoACaja, compensarAnulacion } = require("../../helpers/caja-helper");
 const {
   validarCoherenciaVariante,
   compararClaveStock,
@@ -360,7 +361,8 @@ const _createVentaFtr = async (body, user) => {
   let confirmada = false;
 
   try {
-    const { detalles = [], pago = {}, esCotizacion = false, idTipoCliVenta, ...ordenData } = body;
+    // idcaja (opcional): caja donde se cobra un pago en efectivo "Pagado" (ver helpers/caja-helper.js)
+    const { detalles = [], pago = {}, esCotizacion = false, idTipoCliVenta, idcaja, ...ordenData } = body;
 
     // Alcance por sucursal: un usuario no-superadmin siempre registra en SU
     // sucursal; el idsucursal que venga en el body se ignora. El superadmin
@@ -503,14 +505,30 @@ const _createVentaFtr = async (body, user) => {
     }
 
     // Registrar pago inicial solo si NO es cotización
+    let advertenciasCaja = [];
     if (!esCotizacion) {
+      const estadoPago = pago.estado || "Pendiente";
+      const idtipopago = pago.idtipopago || 3;
+
+      // Caja: un pago "Pagado" se asigna a la sesión abierta del usuario que cobra. Va al FINAL de la
+      // transacción (la sesión es el último lock del orden: orden -> producto -> variante -> almacén -> lote -> sesión).
+      const atribucion = await atribuirPagoACaja(transaction, {
+        estado: estadoPago,
+        idtipopago,
+        user,
+        idsucursal: ordenData.idsucursal,
+        idcaja: idcaja ?? pago.idcaja,
+      });
+      advertenciasCaja = atribucion.advertencias;
+
       await models.Pago.create(
         {
-          estado: pago.estado || "Pendiente",
+          estado: estadoPago,
           importe: total,
           idorden: nuevaOrden._id,
-          idtipopago: pago.idtipopago || 3,
+          idtipopago,
           fecha_pago: new Date(),
+          ...atribucion.campos,
         },
         { transaction }
       );
@@ -519,7 +537,8 @@ const _createVentaFtr = async (body, user) => {
     await transaction.commit();
     confirmada = true;
 
-    return getVentaFtr(nuevaOrden._id);
+    const ventaCreada = await getVentaFtr(nuevaOrden._id);
+    return advertenciasCaja.length ? { ...ventaCreada, advertencias: advertenciasCaja } : ventaCreada;
 
   } catch (error) {
     if (confirmada) error.transaccionConfirmada = true; // nunca reintentar tras el commit
@@ -644,14 +663,29 @@ const convertirCotizacionFtr = async (id, body = {}, user = null) => {
       transaction
     );
 
+    let advertenciasCaja = [];
     if (body.pago) {
+      const estadoPago = body.pago.estado || "Pendiente";
+      const idtipopago = body.pago.idtipopago || 3;
+
+      // Caja: ver createVentaFtr (la sesión es el último lock de la transacción).
+      const atribucion = await atribuirPagoACaja(transaction, {
+        estado: estadoPago,
+        idtipopago,
+        user,
+        idsucursal: orden.idsucursal,
+        idcaja: body.idcaja ?? body.pago.idcaja,
+      });
+      advertenciasCaja = atribucion.advertencias;
+
       await models.Pago.create(
         {
-          estado: body.pago.estado || "Pendiente",
+          estado: estadoPago,
           importe: body.pago.importe ?? total,
           idorden: orden._id,
-          idtipopago: body.pago.idtipopago || 3,
+          idtipopago,
           fecha_pago: new Date(),
+          ...atribucion.campos,
         },
         { transaction }
       );
@@ -659,7 +693,8 @@ const convertirCotizacionFtr = async (id, body = {}, user = null) => {
 
     await transaction.commit();
 
-    return getVentaFtr(orden._id);
+    const ventaConvertida = await getVentaFtr(orden._id);
+    return advertenciasCaja.length ? { ...ventaConvertida, advertencias: advertenciasCaja } : ventaConvertida;
 
   } catch (error) {
     await transaction.rollback();
@@ -728,7 +763,7 @@ const updateVentaFtr = async (id, body, user) => {
  *   = id de la orden) — esto garantiza reversar exactamente lo que se tomó,
  *   y de exactamente qué lotes salió.
  */
-const deleteVentaFtr = async (id, user = null) => {
+const deleteVentaFtr = async (id, user = null, opciones = {}) => {
   const transaction = await models.sequelize.transaction();
   const idusuarioAccion = user?.id ?? null;
 
@@ -766,8 +801,18 @@ const deleteVentaFtr = async (id, user = null) => {
         },
         transaction
       );
+      // Caja: una cotización no tiene pago inicial, pero registrarPagoFtr permite abonarla; si recibió
+      // efectivo "Pagado" en una caja, se compensa igual que en una venta (sin pagos no hace nada).
+      const compensacionCotizacion = await compensarAnulacion(transaction, {
+        tipo: "venta",
+        idreferencia: orden._id,
+        descripcion: `Anulación de cotización ${orden.referencia || orden._id}`.slice(0, 255),
+        user,
+        idsucursal: orden.idsucursal,
+        idcaja: opciones?.idcaja,
+      });
       await transaction.commit();
-      return true;
+      return compensacionCotizacion.advertencias.length ? { advertencias: compensacionCotizacion.advertencias } : true;
     }
 
     const kardexVenta = await models.Kardex.findAll({
@@ -845,9 +890,24 @@ const deleteVentaFtr = async (id, user = null) => {
       transaction
     );
 
+    // Caja: si la venta tenía efectivo "Pagado" que entró a una sesión, se compensa con un EGRESO
+    // "DEVOLUCION" en la sesión abierta ACTUAL del usuario (los pagos originales no se tocan: libro
+    // append-only). Va al final: la sesión es el último lock del orden.
+    const compensacion = await compensarAnulacion(transaction, {
+      tipo: "venta",
+      idreferencia: orden._id,
+      descripcion: `Anulación de venta ${orden.referencia || orden._id}`.slice(0, 255),
+      user,
+      idsucursal: orden.idsucursal,
+      idcaja: opciones?.idcaja,
+    });
+
     // Advertencias (aditivas): la reversa siempre se permite, pero si el stock restituido cae en una
     // clave que ya no es vendible se avisa. Se evalúa con lo leído bajo los locks de arriba.
-    const advertencias = advertenciasDeReversa(agruparMovimientos(movimientos), locks, "restituyeron");
+    const advertencias = [
+      ...advertenciasDeReversa(agruparMovimientos(movimientos), locks, "restituyeron"),
+      ...compensacion.advertencias,
+    ];
 
     await transaction.commit();
     return advertencias.length ? { advertencias } : true;
@@ -919,7 +979,10 @@ const marcarEntregadaFtr = async (id, user = null) => {
 const registrarPagoFtr = async (idorden, body = {}, user = null) => {
   const transaction = await models.sequelize.transaction();
   try {
-    const orden = await models.Orden.findByPk(idorden, { transaction });
+    // PRIMER statement: fila de la orden bloqueada (FOR UPDATE), igual que anular/convertir. Orden de locks
+    // orden -> sesión: serializa el abono contra una anulación (que compensa en caja lo ya cobrado) y evita el
+    // deadlock con el INSERT del Pago (su FK pide S sobre la orden).
+    const orden = await models.Orden.findByPk(idorden, { transaction, lock: transaction.LOCK.UPDATE });
     if (!orden) {
       const error = new Error("Venta no encontrada");
       error.status = 404;
@@ -928,19 +991,31 @@ const registrarPagoFtr = async (idorden, body = {}, user = null) => {
 
     assertMismaSucursal(orden, user);
 
+    const estadoPago = body.estado || "Pendiente";
+
+    // Caja: el abono "Pagado" se asigna a la sesión abierta del usuario que cobra (en este momento).
+    const atribucion = await atribuirPagoACaja(transaction, {
+      estado: estadoPago,
+      idtipopago: body.idtipopago,
+      user,
+      idsucursal: orden.idsucursal,
+      idcaja: body.idcaja,
+    });
+
     const pago = await models.Pago.create(
       {
         idorden,
         importe: body.importe,
         idtipopago: body.idtipopago,
-        estado: body.estado || "Pendiente",
+        estado: estadoPago,
         fecha_pago: body.fecha_pago || new Date(),
+        ...atribucion.campos,
       },
       { transaction }
     );
 
     await transaction.commit();
-    return pago;
+    return atribucion.advertencias.length ? { ...pago.toJSON(), advertencias: atribucion.advertencias } : pago;
   } catch (error) {
     await transaction.rollback();
     throw error;

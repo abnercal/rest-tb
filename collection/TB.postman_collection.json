@@ -5,13 +5,6 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "368484"
   },
-  "variable": [
-    {
-      "key": "token",
-      "value": "",
-      "description": "Se setea solo al correr \"Auth > login\" (ver su test script). Los requests que ya tienen auth Bearer {{token}} lo leen de acá."
-    }
-  ],
   "item": [
     {
       "name": "Ventas",
@@ -209,17 +202,41 @@
           "response": []
         },
         {
+          "name": "orden",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"nombre\": \"Venta de ropa\",\r\n  \"fecha\": \"2026-11-11T12:00:00.000Z\",\r\n  \"direccion\": \"Sucursal Central\",\r\n  \"idcliente\": 1,\r\n  \"idusuario\": 1,\r\n  \"idsucursal\": 1,\r\n  \"detalles\": [\r\n    {\r\n      \"idprodPresenta\": 14,\r\n      \"cantidad\": 5,\r\n      \"precio\": 50.00,\r\n      \"idvariante\": 1\r\n    },\r\n    {\r\n      \"idprodPresenta\":14,\r\n      \"cantidad\": 2,\r\n      \"precio\": 60.00,\r\n      \"idvariante\": 2\r\n    }\r\n  ],\r\n  \"pago\": {\r\n    \"idtipopago\": 1,\r\n    \"estado\": \"Pagado\"\r\n  }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/ventas",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "ventas"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "listar ordenes",
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
             "method": "GET",
             "header": [],
@@ -244,14 +261,7 @@
           },
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
             "method": "GET",
             "header": [],
@@ -296,16 +306,6 @@
                 "anular",
                 "b8175a47-db7b-42b2-8a95-f8c9f0ae1fef"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -319,14 +319,7 @@
           "name": "Listar Clientes",
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
             "method": "GET",
             "header": [],
@@ -348,14 +341,7 @@
           "name": "cliente detalle",
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
             "method": "GET",
             "header": [],
@@ -385,14 +371,7 @@
           "name": "Crear clientes",
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
             "method": "POST",
             "header": [],
@@ -486,16 +465,6 @@
                 "api",
                 "usuarios"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -515,16 +484,6 @@
                 "api",
                 "usuarios"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -536,42 +495,6 @@
       "item": [
         {
           "name": "login",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Guarda el token en la variable de colección {{token}} para que",
-                  "// el resto de los requests (que ya usan Bearer {{token}}) funcionen",
-                  "// sin tocar nada a mano después de loguearse.",
-                  "pm.test(\"Login exitoso (200)\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "let body;",
-                  "try {",
-                  "    body = pm.response.json();",
-                  "} catch (e) {",
-                  "    body = null;",
-                  "}",
-                  "",
-                  "const token = body?.data?.token;",
-                  "",
-                  "pm.test(\"Respuesta incluye token\", function () {",
-                  "    pm.expect(token, \"data.token no vino en la respuesta de login\").to.be.a(\"string\").and.not.empty;",
-                  "});",
-                  "",
-                  "if (token) {",
-                  "    pm.collectionVariables.set(\"token\", token);",
-                  "    console.log(\"[login] Token guardado en {{token}}\");",
-                  "} else {",
-                  "    console.warn(\"[login] No se encontró data.token en la respuesta:\", body);",
-                  "}"
-                ]
-              }
-            }
-          ],
           "request": {
             "method": "POST",
             "header": [],
@@ -628,16 +551,6 @@
                 {
                   "key": "limit",
                   "value": "2"
-                }
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
                 }
               ]
             }
@@ -698,14 +611,7 @@
                   "key": "presentaciones",
                   "type": "text",
                   "uuid": "f53dae65-566d-4d3f-a477-654bdca0c659",
-                  "value": "[{\"idpresentacion\":1,\"cantidad_base\":1,\"precio_venta\":50.00,\"codigo_barras\":\"7501234567890\",\"precios\":[{\"idtipoCli\":1,\"precio\":45.00,\"tipoprecio\":\"mayorista\"},{\"idtipoCli\":2,\"precio\":50.00,\"tipoprecio\":\"minorista\"}]}]",
-                  "description": "\"precios\" es OPCIONAL por presentación. Si se omite, la presentación queda solo con precio_venta (precio único, sin distinción por tipo de cliente). idtipoCli debe existir en la tabla tipocli."
-                },
-                {
-                  "key": "controla_vencimiento",
-                  "value": "false",
-                  "type": "text",
-                  "description": "Nuevo. Si es \"true\", las ventas de este producto consumen Lotes en orden FEFO (primero el que vence antes) y el Kardex queda con el idlote usado. Si es \"false\"/se omite, se descuenta stock sin lotes (comportamiento anterior)."
+                  "value": "[{\"idpresentacion\":1,\"cantidad_base\":1,\"precio_venta\":50.00,\"codigo_barras\":\"7501234567890\"}]"
                 }
               ]
             },
@@ -719,16 +625,6 @@
                 "api",
                 "productos"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -740,20 +636,7 @@
             "header": [],
             "body": {
               "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "nombre",
-                  "value": "Coca-Cola 2.5L",
-                  "type": "text",
-                  "description": "Cualquier campo del producto es opcional en el update; solo se actualiza lo que se envía."
-                },
-                {
-                  "key": "presentaciones",
-                  "type": "text",
-                  "value": "[{\"idpresentacion\":1,\"cantidad_base\":1,\"precio_venta\":55.00,\"precios\":[{\"idtipoCli\":1,\"precio\":48.00,\"tipoprecio\":\"mayorista\"}]},{\"idpresentacion\":2,\"cantidad_base\":12,\"precio_venta\":550.00}]",
-                  "description": "Ejemplo de los 3 comportamientos: (1) idpresentacion 1 trae solo idtipoCli=1 en \"precios\" -> ese precio se actualiza/crea, y cualquier otro idtipoCli que ya estuviera activo para esa presentación (ej. el 2 del alta) queda DESHABILITADO (estado=0), no borrado. (2) idpresentacion 2 NO manda \"precios\" -> sus precios existentes (si los hay) quedan intactos, solo se actualiza precio_venta/cantidad_base. (3) Una presentación que ya existía y no aparece en este array se deshabilita completa (estado=0 en producto_presentacion)."
-                }
-              ]
+              "formdata": []
             },
             "url": {
               "raw": "localhost:8080/api/productos/4",
@@ -765,16 +648,6 @@
                 "api",
                 "productos",
                 "4"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -807,16 +680,6 @@
                 "api",
                 "proveedor"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -845,16 +708,6 @@
                 "api",
                 "proveedor"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -863,17 +716,7 @@
           "name": "update proveedor",
           "request": {
             "method": "PUT",
-            "header": [],
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            }
+            "header": []
           },
           "response": []
         },
@@ -881,17 +724,7 @@
           "name": "delete proveedor",
           "request": {
             "method": "DELETE",
-            "header": [],
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            }
+            "header": []
           },
           "response": []
         }
@@ -904,14 +737,7 @@
           "name": "Lista",
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
             "method": "GET",
             "header": [],
@@ -953,16 +779,6 @@
                 "api",
                 "sucursales"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -971,17 +787,7 @@
           "name": "update",
           "request": {
             "method": "PUT",
-            "header": [],
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            }
+            "header": []
           },
           "response": []
         },
@@ -989,17 +795,7 @@
           "name": "delete",
           "request": {
             "method": "DELETE",
-            "header": [],
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            }
+            "header": []
           },
           "response": []
         }
@@ -1033,16 +829,6 @@
                   "value": "2"
                 }
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -1054,7 +840,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n  \"nombre\": \"Estrada\",\r\n  \"fecha\": \"2026-04-18T15:00:00.000Z\",\r\n  \"direccion\": \"Bodega Central\",\r\n  \"estado\": true,\r\n  \"idproveedor\": 1,\r\n  \"idusuario\": 3,\r\n  \"idsucursal\": 2,\r\n  \"total\": 1500.75,\r\n  \"detalles\": [\r\n    {\r\n      \"idprodPresenta\": 2,\r\n      \"cantidad\": 5,\r\n      \"costo\": 100.50\r\n    },\r\n    {\r\n      \"idprodPresenta\": 3,\r\n      \"cantidad\": 10,\r\n      \"costo\": 50.25\r\n    }\r\n  ]\r\n}",
+              "raw": "{\r\n  \"nombre\": \"Compra de ropa\",\r\n  \"fecha\": \"2026-11-11T15:00:00.000Z\",\r\n  \"direccion\": \"Bodega Central\",\r\n  \"estado\": true,\r\n  \"idproveedor\": 1,\r\n  \"idusuario\": 1,\r\n  \"idsucursal\": 1,\r\n  \"total\": 1500.75,\r\n  \"detalles\": [\r\n    {\r\n      \"idprodPresenta\": 14,\r\n      \"cantidad\": 20,\r\n      \"costo\": 30.50,\r\n      \"idvariante\": 1\r\n    },\r\n    {\r\n      \"idprodPresenta\": 14,\r\n      \"cantidad\": 10,\r\n      \"costo\": 30.50,\r\n      \"idvariante\": 2\r\n    }\r\n  ]\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1070,16 +856,6 @@
               "path": [
                 "api",
                 "compras"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1101,16 +877,6 @@
                 "compras",
                 "anular",
                 "7bb33569-31a2-4aef-b2fd-302a10113954"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1135,16 +901,6 @@
               "path": [
                 "api",
                 "marcas"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1173,16 +929,6 @@
               "path": [
                 "api",
                 "marcas"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1213,16 +959,6 @@
                 "marcas",
                 "4"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -1242,16 +978,6 @@
                 "api",
                 "marcas",
                 "4"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1276,16 +1002,6 @@
               "path": [
                 "api",
                 "categorias"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1314,16 +1030,6 @@
               "path": [
                 "api",
                 "categorias"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1354,16 +1060,6 @@
                 "categorias",
                 "5"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -1383,16 +1079,6 @@
                 "api",
                 "categorias",
                 "4"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1417,16 +1103,6 @@
               "path": [
                 "api",
                 "unidades"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1455,16 +1131,6 @@
               "path": [
                 "api",
                 "unidades"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1495,16 +1161,6 @@
                 "unidades",
                 "5"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -1524,16 +1180,6 @@
                 "api",
                 "unidades",
                 "4"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1558,16 +1204,6 @@
               "path": [
                 "api",
                 "presentaciones"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1596,16 +1232,6 @@
               "path": [
                 "api",
                 "presentaciones"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1636,16 +1262,6 @@
                 "presentaciones",
                 "2"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -1665,16 +1281,6 @@
                 "api",
                 "presentaciones",
                 "2"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1699,16 +1305,6 @@
               "path": [
                 "api",
                 "roles"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1737,16 +1333,6 @@
               "path": [
                 "api",
                 "roles"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1777,16 +1363,6 @@
                 "roles",
                 "1"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -1806,16 +1382,6 @@
                 "api",
                 "roles",
                 "1"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1850,16 +1416,6 @@
                 "api",
                 "permisos"
               ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
             }
           },
           "response": []
@@ -1878,16 +1434,6 @@
               "path": [
                 "api",
                 "permisos"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
               ]
             }
           },
@@ -1918,6 +1464,623 @@
                 "permisos",
                 "1"
               ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Talla",
+      "item": [
+        {
+          "name": "Listado talla",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/tallas",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "tallas"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Nueva talla",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"nombre\": \"42\", \"tipo\": \"CALZADO\", \"orden\": 42 }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/tallas",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "tallas"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Publico",
+      "item": [
+        {
+          "name": "Lista",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/publicos",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "publicos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Nuevo",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"nombre\": \"Mujer\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/publicos",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "publicos"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Color",
+      "item": [
+        {
+          "name": "Lista",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/colores",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "colores"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "New Request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"nombre\": \"Azul\", \"hex\": \"#1E40AF\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/colores",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "colores"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Caja",
+      "item": [
+        {
+          "name": "listar cajas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas?page=1&limit=20&estado=1",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "estado",
+                  "value": "1"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Permiso caja:read. Alcance por sucursal (el superadmin puede filtrar con ?idsucursal=)."
+          },
+          "response": []
+        },
+        {
+          "name": "caja detalle",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas/1",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "1"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "404 CAJA_NO_ENCONTRADA; una caja de otra sucursal tambien devuelve 404."
+          },
+          "response": []
+        },
+        {
+          "name": "crear caja",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"nombre\": \"Caja 2\",\r\n  \"idsucursal\": 1\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/cajas",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Permiso caja:create. Un no-superadmin siempre crea en SU sucursal (el idsucursal del body se ignora). Nombre repetido en la sucursal -> 409 CAJA_DUPLICADA."
+          },
+          "response": []
+        },
+        {
+          "name": "actualizar caja",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"nombre\": \"Caja Mostrador\",\r\n  \"estado\": 1\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/cajas/2",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "2"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Permiso caja:update. estado=0 con una sesion ABIERTA -> 409 CAJA_CON_SESION_ABIERTA. La sucursal no se puede cambiar."
+          },
+          "response": []
+        },
+        {
+          "name": "eliminar caja (baja logica)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas/2",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "2"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Permiso caja:delete. Pone estado=0. Con sesion ABIERTA -> 409 CAJA_CON_SESION_ABIERTA."
+          },
+          "response": []
+        },
+        {
+          "name": "abrir caja",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"monto_apertura\": 100,\r\n  \"observaciones\": \"Turno mañana\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/cajas/1/abrir",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "1",
+                "abrir"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Permiso caja:operar. La sesion queda abierta por el usuario del token. Segunda apertura de la misma caja -> 409 CAJA_YA_ABIERTA; un usuario con otra sesion abierta en la sucursal -> 409 USUARIO_CON_SESION_ABIERTA; caja inactiva -> 409 CAJA_INACTIVA; monto < 0 -> 422."
+          },
+          "response": []
+        },
+        {
+          "name": "sesion actual (mia)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesion-actual",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesion-actual"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Sesion ABIERTA del usuario del token + arqueo en vivo. Sin sesion -> 404 SESION_NO_ENCONTRADA; con 2 sesiones abiertas -> 409 SESION_AMBIGUA (enviar ?idcaja=)."
+          },
+          "response": []
+        },
+        {
+          "name": "sesion actual (por caja)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesion-actual?idcaja=1",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesion-actual"
+              ],
+              "query": [
+                {
+                  "key": "idcaja",
+                  "value": "1"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Sesion ABIERTA de esa caja (aunque la haya abierto otro usuario de la sucursal) + arqueo en vivo."
+          },
+          "response": []
+        },
+        {
+          "name": "listar sesiones",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesiones?page=1&limit=20&estado=CERRADA&idcaja=1&desde=2026-11-01&hasta=2026-11-30",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesiones"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "estado",
+                  "value": "CERRADA"
+                },
+                {
+                  "key": "idcaja",
+                  "value": "1"
+                },
+                {
+                  "key": "desde",
+                  "value": "2026-11-01"
+                },
+                {
+                  "key": "hasta",
+                  "value": "2026-11-30"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Filtros opcionales: idcaja, estado (ABIERTA|CERRADA), idusuario (quien abrio), desde/hasta (fecha_apertura; una fecha sola abarca el dia completo)."
+          },
+          "response": []
+        },
+        {
+          "name": "sesion detalle",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesiones/1",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesiones",
+                "1"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Incluye Caja, UsuarioApertura y UsuarioCierre."
+          },
+          "response": []
+        },
+        {
+          "name": "movimiento: gasto",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"tipo\": \"EGRESO\",\r\n  \"concepto\": \"GASTO\",\r\n  \"importe\": 25.5,\r\n  \"descripcion\": \"Bolsas y cinta\",\r\n  \"referencia\": \"REC-0001\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesiones/1/movimientos",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesiones",
+                "1",
+                "movimientos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Permiso caja:operar. Solo en sesion ABIERTA (409 SESION_NO_ABIERTA). importe > 0 con hasta 2 decimales. Un error se corrige con otro movimiento, no se edita."
+          },
+          "response": []
+        },
+        {
+          "name": "movimiento: retiro",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"tipo\": \"EGRESO\",\r\n  \"concepto\": \"RETIRO\",\r\n  \"importe\": 200,\r\n  \"descripcion\": \"Retiro a caja fuerte\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesiones/1/movimientos",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesiones",
+                "1",
+                "movimientos"
+              ]
             },
             "auth": {
               "type": "bearer",
@@ -1931,6 +2094,321 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "movimiento: ingreso",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"tipo\": \"INGRESO\",\r\n  \"concepto\": \"FONDO\",\r\n  \"importe\": 50,\r\n  \"descripcion\": \"Fondo de cambio\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesiones/1/movimientos",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesiones",
+                "1",
+                "movimientos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "listar movimientos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesiones/1/movimientos?tipo=EGRESO",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesiones",
+                "1",
+                "movimientos"
+              ],
+              "query": [
+                {
+                  "key": "tipo",
+                  "value": "EGRESO"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Opcional: tipo=INGRESO|EGRESO, page, limit."
+          },
+          "response": []
+        },
+        {
+          "name": "arqueo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesiones/1/arqueo",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesiones",
+                "1",
+                "arqueo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "esperado = apertura + ventas cobradas en EFECTIVO (estado Pagado) - compras pagadas en EFECTIVO + ingresos manuales - egresos manuales (incluye devoluciones). Los pagos NO efectivo se informan en otros_medios_pago y no afectan el esperado."
+          },
+          "response": []
+        },
+        {
+          "name": "cerrar caja",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"monto_contado\": 148.5,\r\n  \"observaciones\": \"Cierre turno mañana\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/cajas/sesiones/1/cerrar",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "cajas",
+                "sesiones",
+                "1",
+                "cerrar"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Permiso caja:operar. Calcula el esperado en una transaccion con la sesion bloqueada; diferencia = contado - esperado (negativo = faltante). Segundo cierre -> 409 SESION_NO_ABIERTA."
+          },
+          "response": []
+        },
+        {
+          "name": "venta en efectivo Pagado (se asigna a la sesion)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"nombre\": \"Venta de mostrador\",\r\n  \"idcliente\": 1,\r\n  \"idusuario\": 1,\r\n  \"idsucursal\": 1,\r\n  \"esCotizacion\": false,\r\n  \"detalles\": [\r\n    {\r\n      \"idprodPresenta\": 1,\r\n      \"cantidad\": 2,\r\n      \"precio\": 25\r\n    }\r\n  ],\r\n  \"pago\": {\r\n    \"idtipopago\": 1,\r\n    \"estado\": \"Pagado\"\r\n  }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/ventas",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "ventas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "El pago en efectivo con estado Pagado se asigna a la sesion ABIERTA del usuario del token (en la sucursal de la venta); idcaja opcional (body o dentro de pago) para elegir la caja. Un pago Pendiente NO cuenta. Sin sesion abierta: por defecto la venta se registra y data.advertencias trae PAGO_SIN_SESION_DE_CAJA; con CAJA_OBLIGATORIA=true -> 409 CAJA_NO_ABIERTA. Ajustá idprodPresenta a tus datos (y idvariante si el producto maneja variantes). idtipopago=1 debe ser el tipo con es_efectivo=1. detalles[].precio es obligatorio para el validator pero el servidor lo ignora y lo recalcula (precio de la variante > precio por tipo de cliente > precio_venta)."
+          },
+          "response": []
+        },
+        {
+          "name": "abono en efectivo Pagado a una venta",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"importe\": 50,\r\n  \"idtipopago\": 1,\r\n  \"estado\": \"Pagado\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/ventas/REEMPLAZAR-ID-VENTA/pagos",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "ventas",
+                "REEMPLAZAR-ID-VENTA",
+                "pagos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Reemplazá REEMPLAZAR-ID-VENTA. El abono Pagado se asigna a la sesion abierta del usuario en el momento del cobro."
+          },
+          "response": []
+        },
+        {
+          "name": "compra en efectivo Pagado (sale de la caja)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"idproveedor\": 1,\r\n  \"idusuario\": 1,\r\n  \"idsucursal\": 1,\r\n  \"detalles\": [\r\n    {\r\n      \"idprodPresenta\": 1,\r\n      \"cantidad\": 5,\r\n      \"costo\": 20\r\n    }\r\n  ],\r\n  \"pago\": {\r\n    \"idtipopago\": 1,\r\n    \"estado\": \"Pagado\"\r\n  }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/compras",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "compras"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Una compra pagada en efectivo resta del esperado de la sesion abierta del usuario."
+          },
+          "response": []
+        },
+        {
+          "name": "anular venta (genera DEVOLUCION en la caja)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "localhost:8080/api/ventas/anular/REEMPLAZAR-ID-VENTA",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "ventas",
+                "anular",
+                "REEMPLAZAR-ID-VENTA"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Si la venta tenia efectivo Pagado asignado a una sesion, se registra un EGRESO 'DEVOLUCION' (referencia = id de la orden) en la sesion ABIERTA actual del usuario; los pagos originales no se modifican. Body opcional: { idcaja }. Sin sesion abierta: advertencia DEVOLUCION_SIN_SESION_DE_CAJA en data.advertencias, o 409 CAJA_NO_ABIERTA con CAJA_OBLIGATORIA=true. Para compras: POST /api/compras/anular/:id genera un INGRESO 'DEVOLUCION COMPRA'."
+          },
+          "response": []
         }
       ]
     },
@@ -1938,16 +2416,25 @@
       "name": "New Request",
       "request": {
         "method": "GET",
+        "header": []
+      },
+      "response": []
+    },
+    {
+      "name": "New Request",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    },
+    {
+      "name": "New Request",
+      "request": {
+        "method": "GET",
         "header": [],
-        "auth": {
-          "type": "bearer",
-          "bearer": [
-            {
-              "key": "token",
-              "value": "{{token}}",
-              "type": "string"
-            }
-          ]
+        "url": {
+          "raw": ""
         }
       },
       "response": []

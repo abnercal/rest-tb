@@ -49,6 +49,8 @@ const PERMISOS = [
   "tallas:read", "tallas:create", "tallas:update", "tallas:delete",
   "colores:read", "colores:create", "colores:update", "colores:delete",
   "publicos:read", "publicos:create", "publicos:update", "publicos:delete",
+  // Caja registradora: catálogo de cajas + consultas (read/create/update/delete) y operación (abrir/cerrar/movimientos)
+  "caja:read", "caja:create", "caja:update", "caja:delete", "caja:operar",
 ];
 
 const PERMISOS_VENDEDOR = [
@@ -58,6 +60,8 @@ const PERMISOS_VENDEDOR = [
   "ventas:create", "clientes:create", "clientes:update",
   "precios:read",
   "tallas:read", "colores:read", "publicos:read",
+  // Caja: el vendedor abre/cierra su caja, registra movimientos y consulta; no administra el catálogo de cajas
+  "caja:read", "caja:operar",
 ];
 
 // Catálogos de variantes
@@ -92,6 +96,7 @@ const MODULOS = [
   { feature_key: 'tallas',         feature_label: 'Tallas',          permiso_nombre: 'tallas:read' },
   { feature_key: 'colores',        feature_label: 'Colores',         permiso_nombre: 'colores:read' },
   { feature_key: 'publicos',       feature_label: 'Público objetivo', permiso_nombre: 'publicos:read' },
+  { feature_key: 'caja',           feature_label: 'Caja',            permiso_nombre: 'caja:read' },
   { feature_key: 'usuarios',       feature_label: 'Usuarios',        permiso_nombre: 'usuarios:read' },
   { feature_key: 'roles',          feature_label: 'Roles',           permiso_nombre: 'roles:read' },
   { feature_key: 'permisos',       feature_label: 'Permisos',        permiso_nombre: 'roles:read' },

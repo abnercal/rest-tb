@@ -39,7 +39,7 @@ const updateVentaCtrl = async (req, res) => {
 
 const deleteVentaCtrl = async (req, res) => {
   try {
-    const resultado = await feature.deleteVentaFtr(req.params.id, req.user);
+    const resultado = await feature.deleteVentaFtr(req.params.id, req.user, { idcaja: req.body?.idcaja });
     // data solo lleva `advertencias` cuando la anulación dejó stock en una clave no vendible;
     // sin advertencias la respuesta es idéntica a la de siempre (data: null).
     return successResponse(res, "Venta eliminada", resultado && resultado.advertencias ? { advertencias: resultado.advertencias } : null);

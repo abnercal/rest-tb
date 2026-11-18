@@ -34,6 +34,7 @@ class Server {
             colores: '/api/colores',
             publicos: '/api/publicos',
             barcodes: '/api/barcodes',
+            cajas: '/api/cajas',
         }
 
         //Conectar a base de datos
@@ -98,6 +99,7 @@ class Server {
         this.app.use(this.paths.colores, require('../routes/colores'))
         this.app.use(this.paths.publicos, require('../routes/publicos'))
         this.app.use(this.paths.barcodes, require('../routes/barcodes'))
+        this.app.use(this.paths.cajas, require('../routes/caja'))
         this.app.use('*',(req,res) => {
             res.status(404).json({
                 errors: {

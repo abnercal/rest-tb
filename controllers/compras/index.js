@@ -23,7 +23,7 @@ const getCompraCtrl = async (req, res) => {
 
 const createCompraCtrl = async (req, res) => {
   try {
-    const data = await feature.createCompraFtr(req.body);
+    const data = await feature.createCompraFtr(req.body, req.user);
     return successResponse(res, "Compra registrada", data, null, 201);
   } catch (error) {
     return errorResponse(res, error, "Error al registrar compra");
@@ -41,7 +41,7 @@ const updateCompraCtrl = async (req, res) => {
 
 const deleteCompraCtrl = async (req, res) => {
   try {
-    const resultado = await feature.deleteCompraFtr(req.params.id, req.user?.id);
+    const resultado = await feature.deleteCompraFtr(req.params.id, req.user?.id, req.user, { idcaja: req.body?.idcaja });
     // data solo lleva `advertencias` cuando la anulación dejó stock en una clave no vendible;
     // sin advertencias la respuesta es idéntica a la de siempre (data: null).
     return successResponse(res, "Compra eliminada", resultado && resultado.advertencias ? { advertencias: resultado.advertencias } : null);
@@ -52,7 +52,7 @@ const deleteCompraCtrl = async (req, res) => {
 
 const registrarPagoCompraCtrl = async (req, res) => {
   try {
-    const data = await feature.registrarPagoCompraFtr(req.params.id, req.body);
+    const data = await feature.registrarPagoCompraFtr(req.params.id, req.body, req.user);
     return successResponse(res, "Pago registrado", data, null, 201);
   } catch (error) {
     return errorResponse(res, error, "Error al registrar pago");
